@@ -1,0 +1,169 @@
+---
+title: "GDP Data"
+author: "Andrew Deighan"
+date: "July 4, 2017"
+output: html_document
+---
+
+This R markdown file shows how the GDP data were obtained.
+
+The data were obtained from the Bureau of Economic Analysis (BEA) on July 4th 2017 via their API.
+
+Datasets available through the API:
+
+```{r avdatasets, cache=TRUE}
+library(httr)
+library(jsonlite)
+library(dplyr)
+
+options(stringsAsFactors = FALSE)
+suppressWarnings(bk <- readLines("beakey.txt"))
+key <- paste("?&UserID=", bk, sep = "")
+url <- "https://www.bea.gov/api/data"
+
+meth <- "GETDATASETLIST"
+form <- "JSON"
+
+call <- paste(url, key, 
+              "&method=", meth, 
+              "&ResultFormat=", form, 
+              sep = "")
+
+datasets <- GET(url = call)$content %>%
+  rawToChar() %>%
+  fromJSON()
+
+datasets$BEAAPI$Results$Dataset$DatasetName
+```
+
+<br>
+
+We are interested in the Regional Product dataset since this is the dataset that contains measures of state GDP. When requestion datasets from BEA via the API some parameters need to be specified. In order to see the parameters that must be specified when requesting the Regional Product dataset, we will request the parameter list for this dataset.
+```{r parameterlist, cache=TRUE}
+meth <- "getparameterlist"
+ds <- "RegionalProduct"
+call <- paste(url, key, 
+              "&method=", meth,
+              "&datasetname=", ds,
+              "&ResultFormat=", form, 
+              sep = "")
+
+param <- GET(url = call)$content %>%
+  rawToChar() %>%
+  fromJSON()
+
+param$BEAAPI$Results$Parameter %>% select(ParameterName, ParameterDescription)
+
+```
+
+<br>
+
+We know that we want GDP information on all the states for all years so we will specify "STATE" and "ALL" for these parameters respectively. As for the Component and IndustryID parameters we will have to do some more digging.
+
+```{r paramvals, cache=TRUE}
+meth <- "GetParameterValues"
+ds <- "RegionalProduct"
+pn <- "Component"
+call <- paste(url, key, 
+              "&method=", meth,
+              "&datasetname=", ds,
+              "&ParameterName=", pn,
+              "&ResultFormat=", form, 
+              sep = "")
+
+c.RP.this.content <- GET(url = call)$content %>%
+  rawToChar() %>%
+  fromJSON()
+
+c.RP.this.content$BEAAPI$Results$ParamValue[c(4,5,12,13,19,20),]
+
+
+
+pn <- "IndustryId"
+call <- paste(url, key, 
+              "&method=", meth,
+              "&datasetname=", ds,
+              "&ParameterName=", pn,
+              "&ResultFormat=", form, 
+              sep = "")
+
+i.RP.this.content <- GET(url = call)$content %>%
+  rawToChar() %>%
+  fromJSON()
+
+filter(i.RP.this.content$BEAAPI$Results$ParamValue, Key == "1")
+```
+
+  We want the GDP total for all industries so we will specify the value "1" for IndustryID. For the Component parameter we will request information on the GDP calculated using both the NAICS and SIC method for both inflation adjusted and unadjusted GDP. We also want per capita data if available, this means we will have to do six different API requests using six different values for the Componenet parameter:
+  
+- GDP_SAN: GDP by state (NAICS unadjusted)
+- GDP_SAS: GDP by state (SIC unadjusted)
+- RGDP_SAN: Real GDP by state (NAICS adjusted to 2009 dollars)
+- RGDP_SAS: Real GDP by state (SIC adjusted to 1997 dollars)
+- PCRGDP_SAN: Per capita real GDP by state (NAICS adjusted to 2009 dollars)
+- PCRGDP_SAS: Per capita real GDP by state (SIC adjusted to 1997 dollars)
+
+  We will create a funtion called "getGDP" to make this task easier
+
+```{r gdpfunction}
+getGDP <- function(comp, area = "STATE", inds = "1", year = "ALL"){
+  
+  suppressWarnings(bk <- readLines("beakey.txt"))
+  key <- paste("?&UserID=", bk, sep = "")
+  url <- "https://www.bea.gov/api/data"
+  
+  meth <- "GetData"
+  ds <- "RegionalProduct"
+  
+  call <- paste(url, key, 
+                "&method=", meth,
+                "&datasetname=", ds,
+                "&Component=", comp,
+                "&GeoFips=", area,
+                "&IndustryId=", inds,
+                "&Year=", year,
+                "&ResultFormat=", form, 
+                sep = "")
+  
+  content <- GET(url = call)$content %>%
+    rawToChar() %>%
+    fromJSON()
+  
+  tidyGDP <- content$BEAAPI$Results$Data %>%
+    select(TimePeriod, GeoName, Code, CL_UNIT, DataValue) %>%
+    rename(year = TimePeriod, 
+           area = GeoName, 
+           code = Code, 
+           currency = CL_UNIT, 
+           gdp = DataValue) %>%
+    mutate(year = as.integer(year),
+           gdp = as.integer(gdp))
+  
+  return(tidyGDP)
+  
+}
+```
+
+<br>
+
+Using the above described function we request the GDP data and combine it into one dataset
+
+```{r getgdp, cache=TRUE}
+NAICS <- getGDP(comp = "GDP_SAN")
+SIC <- getGDP(comp = "GDP_SAS")
+REAL.NAICS <- getGDP(comp = "RGDP_SAN")
+REAL.SIC <- getGDP(comp = "RGDP_SAS")
+REALpcNAICS <- getGDP(comp = "PCRGDP_SAN")
+REALpcSIC <- getGDP(comp = "PCRGDP_SAS")
+
+GDPdata <- rbind(NAICS, SIC, REAL.NAICS, REAL.SIC, REALpcNAICS, REALpcSIC) %>%
+  arrange(year, area)
+
+str(GDPdata)
+head(GDPdata)
+tail(GDPdata)
+```
+
+```{r writedata, eval = FALSE}
+write.csv(GDPdata, "data/GDP Data.csv", row.names = FALSE)
+```

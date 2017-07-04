@@ -1,7 +1,8 @@
 library(httr)
 library(jsonlite)
 options(stringsAsFactors = FALSE)
-key <- "?&UserID=ACF480EC-2458-4299-B535-7B87B5D9C483"
+suppressWarnings(bk <- readLines("beakey.txt"))
+key <- paste("?&UserID=", bk, sep = "")
 url <- "https://www.bea.gov/api/data"
 
 meth <- "GETDATASETLIST"
@@ -92,17 +93,19 @@ i.RP.this.content$BEAAPI$Results$ParamValue
 
 getGDP <- function(comp, area = "STATE", inds = "1", year = "ALL"){
   
-  key <- "?&UserID=ACF480EC-2458-4299-B535-7B87B5D9C483"
+  suppressWarnings(bk <- readLines("beakey.txt"))
+  key <- paste("?&UserID=", bk, sep = "")
   url <- "https://www.bea.gov/api/data"
   
+  meth <- "GetData"
+  ds <- "RegionalProduct"
   call <- paste(url, key, 
                 "&method=", meth,
                 "&datasetname=", ds,
                 "&Component=", comp,
                 "&GeoFips=", area,
                 "&IndustryId=", inds,
-                "&Year=", year,
-                "&ResultFormat=", form, 
+                "&Year=", year, 
                 sep = "")
   
   content <- GET(url = call)$content %>%
