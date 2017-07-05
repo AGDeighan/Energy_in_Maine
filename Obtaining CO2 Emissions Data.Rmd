@@ -1,0 +1,108 @@
+---
+title: "Obtaining State CO2 Emissions Data"
+author: "Andrew Deighan"
+date: "July 5, 2017"
+output: html_document
+---
+```{r, echo=FALSE, cache=TRUE}
+downloaddate <- date()
+```
+
+  First we will download all the files. The files were downloaded from the EIA website (https://www.eia.gov/environment/emissions/state/) on `r downloaddate`. 
+
+```{r downloadfiles, cache=TRUE}
+states <- c(tolower(state.name), "district of columbia")
+states <- gsub(" ", "%20", states)
+files <- c()
+
+i <- 0
+for(state in states){
+  i <- i + 1
+  url <- paste("https://www.eia.gov/environment/emissions/state/excel/",
+               state, ".xlsx", sep = "")
+  sname <- gsub("%20", " ", state)
+  file <- tempfile(pattern = sname, fileext = ".xlsx")
+  download.file(url, file, mode = "wb")
+  files <- c(files, file)
+  rm(url, sname, file)
+  print(i)
+}
+
+rm(i)
+```
+
+  Next we will compile all the data from each individual state into one tidy data set.
+  
+```{r compiletidy, cache=TRUE}
+library(xlsx)
+library(dplyr)
+
+# Create function for tidying data from each state
+tidier <- function(file, sname){
+  require(xlsx)
+  require(dplyr)
+  
+  # Create vector of all years included in the data sets
+  years <- 1980:2014
+  
+  # Create vector of all sectors included in the data set (these were be found
+  # by taking a quick look at the excel files posted in the EIA page) 
+  sectors <- c("Residential", "Commercial", "Industrial", "Transportation", "Electric Power", "All")
+  
+  # Create vector of sources included in data set
+  sources <- c("Coal", "Petroleum Products", "Natural Gas", "All")
+  
+  # initialize dataframe
+  tidy <- data.frame(year = rep(years, each = 24),
+                     state = rep(sname, 840),
+                     sector = rep(rep(sectors, each = 4), length(years)),
+                     source = rep(sources, 6*length(years)),
+                     carbdiox_millmtrcton = rep(NA, 24*length(years)))
+  
+  messydata <- read.xlsx(file, sheetIndex = 1, header = TRUE)
+  
+  # create vectors containing row and column indices of CO2 emissions
+  r <- c(5:8,11:14,17:20,23:26,29:32,37:40)
+  c <- 3:37
+  
+  # use row and column indices to add CO2 emissions values
+  tidy <- tidy %>% 
+    mutate(carbdiox_millmtrcton = 
+             as.vector(as.numeric(as.matrix(messydata[r,c]))))
+  
+  rm(years, sectors, sources, messydata, r, c)
+  
+  return(tidy)
+}
+
+# Initialize data frame
+CO2tidy <- data.frame(year = c(),
+                      state = c(),
+                      sector = c(),
+                      source = c(),
+                      carbdiox_millmtrcton = c())
+
+states <- gsub("%20", " ", states)
+
+# loop through excel files, tidying them and adding the result to the
+# master data frame
+
+i <- 0
+for(f in files){
+  i <- i+1
+  temp <- tidier(file = f, sname = states[i])
+  CO2tidy <- rbind(CO2tidy, temp)
+  rm(temp)
+  print(i)
+}
+
+write.csv(CO2tidy, "C02 Emissions Data.csv", row.names = FALSE)
+```
+
+
+
+
+
+```{r, echo=FALSE}
+#unlink(tempdir(), recursive=TRUE)
+```
