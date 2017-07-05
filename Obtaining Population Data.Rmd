@@ -1,0 +1,54 @@
+---
+title: "Obtaining Population Data"
+author: "Andrew Deighan"
+date: "July 5, 2017"
+output: html_document
+---
+
+```{r, echo=FALSE, cache=TRUE}
+downloaddate <- date()
+```
+
+  The population data was obtained from the National Cancer Institute's Surveillance, Epidemiology, and End Results (SEER) program https://seer.cancer.gov/popdata/download.html. This website has census bureau county level population data (by age group) going back to 1969. We accessed this data on `r downloaddate`
+
+```{r downloaddata, results="hide", cache=TRUE}
+library(readr)
+
+url <- "https://seer.cancer.gov/popdata/yr1969_2015.19ages/us.1969_2015.19ages.txt.gz"
+file <- tempfile(pattern = "populationdata", fileext = ".gz")
+download.file(url, file)
+
+popdata <- read_fwf(file,
+                     fwf_positions(c(1,5,19),
+                                   c(4,6,26),
+                                   c("year", "state", "population")),
+                     skip = 3001703)
+
+unlink(file)
+```
+
+<br>
+
+  Now we will tidy up the data a little more, including changing the state name abbreviations to full state names (this will make it easier when we eventually merge this data set with our other data sets)
+  
+```{r cleanup, results="hide"}
+library(dplyr)
+
+popdata <- popdata %>% 
+  filter(year >= 1980) %>%
+  mutate(population = as.integer(population)) %>%
+  group_by(year, state) %>% 
+  summarise(population = sum(population)) %>%
+  ungroup()
+
+snames <- tolower(state.name)
+for(r in 1:nrow(popdata)){
+    if(length(snames[state.abb == popdata$state[r]]) > 0){
+    popdata$state[r] <- snames[state.abb == popdata$state[r]]
+    }
+}
+
+popdata$state[popdata$state == "DC"] <- "district of columbia"
+
+write.csv(popdata, "data/Population Data.csv", row.names = FALSE)
+```

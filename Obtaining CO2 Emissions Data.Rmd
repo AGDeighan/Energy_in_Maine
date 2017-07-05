@@ -10,14 +10,12 @@ downloaddate <- date()
 
   First we will download all the files. The files were downloaded from the EIA website (https://www.eia.gov/environment/emissions/state/) on `r downloaddate`. 
 
-```{r downloadfiles, cache=TRUE}
+```{r downloadfiles, results="hide", cache=TRUE}
 states <- c(tolower(state.name), "district of columbia")
 states <- gsub(" ", "%20", states)
 files <- c()
 
-i <- 0
 for(state in states){
-  i <- i + 1
   url <- paste("https://www.eia.gov/environment/emissions/state/excel/",
                state, ".xlsx", sep = "")
   sname <- gsub("%20", " ", state)
@@ -25,15 +23,12 @@ for(state in states){
   download.file(url, file, mode = "wb")
   files <- c(files, file)
   rm(url, sname, file)
-  print(i)
 }
-
-rm(i)
 ```
 
   Next we will compile all the data from each individual state into one tidy data set.
   
-```{r compiletidy, cache=TRUE}
+```{r compiletidy, results="hide", cache=TRUE}
 library(xlsx)
 library(dplyr)
 
@@ -93,16 +88,13 @@ for(f in files){
   temp <- tidier(file = f, sname = states[i])
   CO2tidy <- rbind(CO2tidy, temp)
   rm(temp)
-  print(i)
 }
 
-write.csv(CO2tidy, "C02 Emissions Data.csv", row.names = FALSE)
+unlink(files, recursive=TRUE)
+
+write.csv(CO2tidy, "data/C02 Emissions Data.csv", row.names = FALSE)
 ```
 
 
 
 
-
-```{r, echo=FALSE}
-#unlink(tempdir(), recursive=TRUE)
-```
