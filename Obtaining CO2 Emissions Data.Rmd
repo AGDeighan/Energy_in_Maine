@@ -92,7 +92,7 @@ for(f in files){
 
 unlink(files, recursive=TRUE)
 
-write.csv(CO2tidy, "data/C02 Emissions Data.csv", row.names = FALSE)
+write.csv(CO2tidy, "data/CO2 Emissions Data.csv", row.names = FALSE)
 ```
 
 
