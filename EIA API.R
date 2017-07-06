@@ -30,6 +30,16 @@ consumption <- as.data.frame(this.content$series$data) %>%
   select(state, year, bill.btu) %>%
   filter(year >= 1980)
 
+rm(key,
+   uribase,
+   meth,
+   sabb,
+   srID,
+   call,
+   raw.result,
+   this.content,
+   consumption)
+
 ################################################################################
 
 totalconsumption <- function(state) {
@@ -358,4 +368,31 @@ consumptiondata <- rbind(resid.consumption.data,
                          elctr.consumption.data,
                          total.consumption.data)
 
-write.csv(consumption, "data/Energy Consumption Data.csv", row.names = FALSE)
+
+snames <- tolower(state.name)
+for(r in 1:nrow(consumptiondata)){
+     if(length(snames[state.abb == consumptiondata$state[r]]) > 0){
+          consumptiondata$state[r] <- snames[state.abb == consumptiondata$state[r]]
+     }
+}
+
+consumptiondata$state[consumptiondata$state == "DC"] <- "district of columbia"
+
+
+write.csv(consumptiondata, "data/Energy Consumption Data.csv", row.names = FALSE)
+
+rm(cmrcl.consumption.data,
+   elctr.consumption.data,
+   indus.consumption.data,
+   resid.consumption.data,
+   total.consumption.data,
+   trans.consumption.data,
+   r,
+   sname,
+   states,
+   t.cmrcl.consumption,
+   t.elctr.consumption,
+   t.indus.consumption,
+   t.resid.consumption,
+   t.trans.consumption,
+   totalconsumption)
