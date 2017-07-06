@@ -155,3 +155,44 @@ ee.plots.trans <- ggplot(filter(comp.extrn.eff, sector == "Transportation"),
      geom_line() + 
      facet_wrap(~comparison) +
      labs(title = "Transportation Sector"); ee.plots.trans
+
+################################################################################
+########### Policy Timeline ####################################################
+
+library(xlsx)
+
+policy.timeline <- read.xlsx("Energy Policy Timeline.xlsx", 
+                             startRow = 3,
+                             header = TRUE,
+                             sheetIndex = 1)
+
+policy.timeline <- policy.timeline %>%
+     filter(!is.na(Title)) %>%
+     select(Title, Subject, Topic, Date, Description) %>%
+     mutate(Description = gsub("\\.", "", Description)) %>%
+     rename(title = Title,
+            subject = Subject,
+            topic = Topic,
+            year = Date,
+            description = Description)
+
+ce.plots.all + 
+     geom_vline(data = policy.timeline, 
+                aes(xintercept = year, color = subject))
+
+
+################################################################################
+###########               Comparison Data Frame                   ##############
+
+comp.df <- rbind(rename(comp.conv.eff, ratio = ce.ratio), 
+                 comp.extrn.eff)
+
+comp.df <- comp.df %>%
+     select(year, metric, comparison, sector, ratio) %>%
+     arrange(year, metric, comparison, sector)
+
+ee.plots.trans <- ggplot(filter(comp.df),
+                         aes(year, ratio)) + 
+     geom_line(aes(color = comparison)) + 
+     facet_grid(metric~sector)
+

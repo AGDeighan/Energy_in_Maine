@@ -1,0 +1,135 @@
+---
+title: "Creating Data Sets"
+author: "Andrew Deighan"
+date: "July 6, 2017"
+output: html_document
+---
+
+  Load necessary libraries
+```{r loadlibraries, message=FALSE}
+library(httr)
+library(jsonlite)
+library(dplyr)
+library(tidyr)
+```
+
+<br>
+
+  Create functions for downloading consumption data
+```{r consmpFunctions, message=FALSE, echo=FALSE}
+
+
+```
+
+<br>
+
+  Create functions for downloading emissions data
+```{r emissFunctions, message=FALSE, echo=FALSE}
+emission.download <- function(state, sector) {
+  require(httr)
+  require(jsonlite)
+  require(dplyr)
+  
+  if(sector == "all") {sc <- "TT"}
+  else if(sector == "commercial") {sc <- "CC"}
+  else if(sector == "electric") {sc <- "EC"}
+  else if(sector == "industrial") {sc <- "IC"}
+  else if(sector == "residential") {sc <- "RC"}
+  else if(sector == "transportation") {sc <- "TC"}
+
+  # Create request key  
+  suppressWarnings(ek <- readLines("EIAkey.txt"))
+  key <- paste("api_key=", ek, sep = ""); rm(ek)
+  uribase <- "http://api.eia.gov/"
+  
+  meth <- "series/?"
+  sabb <- state
+  srID <- paste("&series_id=", 
+                "EMISS.CO2-TOTV-",
+                sc,
+                "-TO-",
+                sabb, 
+                ".A", sep = "")
+  
+  call <- paste(uribase,
+                meth,
+                key,
+                srID,
+                sep = "")
+  
+  # Get raw result to character format 
+  raw.result <- GET(url = call)
+  
+  print(raw.result$status_code)
+  
+  this.content <- raw.result$content %>% 
+    rawToChar() %>%
+    fromJSON()
+  
+  # Convert to data frame
+  consumption <- as.data.frame(this.content$series$data) %>%
+    rename(year = X1, co2.mill.mtrc.ton = X2) %>%
+    mutate(state = sabb,
+           sector = sector,
+           year = as.integer(as.character(year)), 
+           co2.mill.mtrc.ton = 
+             as.numeric(as.character(co2.mill.mtrc.ton))) %>%
+    select(year, state, sector, co2.mill.mtrc.ton) %>%
+    filter(year >= 1960) 
+  
+  return(consumption)
+  
+  rm(sc, key, uribase, 
+     meth, sabb, srID, 
+     call, raw.result, this.content, 
+     consumption)
+}
+
+state.emission.getter <- function(state) {
+  
+  # create vector of sectors to loop through
+  sectors <- c("all",
+               "commercial",
+               "electric",
+               "industrial",
+               "residential",
+               "transportation")
+  
+  # initiate data frame
+  consumption <- data.frame(state = NULL,
+                            sector = NULL,
+                            year = NULL,
+                            co2.mill.mtrc.ton = NULL)
+  
+  # loop through sectors, rowbinding data frames
+  for(s in sectors){
+    consumption <- rbind(consumption,
+                         emission.download(state = state, sector = s))
+  }
+  
+  return(consumption)
+  
+  rm(sectors, consumption, s)
+}
+
+state.emission.compiler <- function(states) {
+  
+  consumption <- data.frame(state = NULL,
+                            sector = NULL,
+                            year = NULL,
+                            co2.mill.mtrc.ton = NULL)
+  
+  for(s in states){
+    consumption <- rbind(consumption,
+                         state.emission.getter(state = s))
+  }
+  
+  return(consumption)
+  
+  rm(consumption, s)
+}
+
+states <- c(state.abb, "DC")
+
+emission.data <- state.emission.compiler(states = states)
+```
