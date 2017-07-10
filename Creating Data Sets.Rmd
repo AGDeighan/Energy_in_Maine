@@ -520,3 +520,133 @@ states <- c(state.abb, "DC")
 
 expenditure.data <- state.expenditures.compiler(states = states)
 ```
+
+<br>
+
+### Loading GDP Data
+
+ The GDP data were aquired from the Bureau of Economic Analysis (BEA). Before 1997 BEA used the Standard Industrial Classification (SIC) system for classifying industries when calculating GDP. In 1997, BEA switched to using the North American Industry Classification System (NAICS). For 1997 BEA reports GDP estimates calculate using both the NAICS and SIC system. The fact the the 1997 estimates differ slightly between these two systems should be kept in mind when are comparing pre and post 1997 GDP data. That being said, we will use GDP estimates calculated using the SIC system for years before 1997 and NAICS for years from 1997 onwards. We will use current dollar GDP values rather than GDP values adjusted for inflation. Since our planned analysis primarily involves Maine's *relative* performance to the rest of the country, adjusting GDP values for inflation would have no effect (since the conversion factor would cancel out).
+ 
+<br>
+
+ Create functions for fetching GDP data
+```{r gdpFunctions}
+gdp.download <- function(component, years){
+     # Function takes two arguments, component name (string) and a vector of
+     # years (integer). The function returns a data frame with total industry
+     # GDP data for those years, for all states.
+     
+     require(httr)
+     require(jsonlite)
+     require(dplyr)
+     
+     # Load user API key from text file
+     suppressWarnings(bk <- readLines("beakey.txt"))
+     key <- paste("?&UserID=", bk, sep = "")
+     # Specify base uri
+     uri <- "https://www.bea.gov/api/data"
+  
+     # Choose the "get data" method which is for requesting data
+     meth <- "GetData"
+     # Choose the data set, the regional product data set includes GDP data
+     # for all states, the country as a whole, and several regions of the
+     # country (we will remove the regional data)
+     ds <- "RegionalProduct"
+     # Specify which GDP compenent we're interested in (NAICS or SIC)
+     comp <- component
+     # Request GDP data for all states
+     area <- "STATE"
+     # The industry code "1" indicates that we want the total GDP data for
+     # all industries
+     inds <- 1
+     # Request GDP data for designated years
+     year <- paste(years, collapse = ",")
+     
+     # Construct API call
+     call <- paste(uri, 
+                   key,
+                   "&method=", meth,
+                   "&datasetname=", ds,
+                   "&Component=", comp,
+                   "&GeoFips=", area,
+                   "&IndustryId=", inds,
+                   "&Year=", year,
+                   sep = "")
+     
+     content <- GET(url = call)$content %>%
+     rawToChar() %>%
+     fromJSON()
+     
+     if(length(names(content$BEAAPI$Results)) == 1){
+          if(names(content$BEAAPI$Results) == 1){
+               stop("Error in API request, likely invalid component name")
+          }
+          else{
+               print("may be some error... check code and output carefully")
+          }
+     }
+     
+     if(component == "GDP_SAS"){units <- "SIC GDP: Millions of Current Dollars"}
+     else if(component == "GDP_SAN"){units <- "NAICS GDP: Millions of Current Dollars"}
+     else{units <- component}
+     
+     
+     tidyGDP <- content$BEAAPI$Results$Data %>%
+          select(TimePeriod, GeoName, Code, DataValue) %>%
+          rename(year = TimePeriod,
+                 state = GeoName,
+                 unit = Code,
+                 value = DataValue) %>%
+          mutate(year = as.integer(year),
+                 unit = units,
+                 value = as.integer(value),
+                 sector = NA) %>%
+          select(year, state, sector, unit, value)
+     
+     states <- c(state.name, "District of Columbia", "United States")
+     
+     tidyGDP <- tidyGDP %>%
+          filter(state %in% states) %>%
+          arrange(year, state, sector)
+     
+     return(tidyGDP)
+}
+```
+
+<br>
+
+ Get SIC and NAICS GDP data and combine the data sets together
+```{r getGDP}
+gdp.data <- gdp.download(component = "GDP_SAS", years = 1960:1996)
+gdp.data <- rbind(gdp.data,
+                  gdp.download(component = "GDP_SAN", years = 1997:2015))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
