@@ -17,19 +17,28 @@ library(tidyr)
 
 ## Loading Data Via APIs
 
- For consumption and emissions there are individual data sets for each sector:
-
-- Residential
-- Commercial
-- Industrial
-- Transportation
-- Electric Power
-
-In addition to individual data sets for each sector there is also a seperate data set for the state total. Thus, for consumption and emissions data 6 API requests need to be made for each state.
+ For consumption, emissions, and expenditures there are individual data sets for each sector. Thus, multiple API requests must be made for each state.
 
 <br>
 
 ### Loading Consumption Data
+
+ For consumption data we are interested in the five primary sectors: residential, commercial, industrial, electric power, and transportation. Additionally, for the residential, commericial, and industrial, sectors we are also specifically interested in consumption data for electricity. Finally, we also want total consumption data across all sectors and total electricity consumption across all sectors. Thus for each state we will make 10 API requests:
+ 
+- State Total
+- State Total: Electricity
+- Residential
+- Residential: Electricity
+- Commercial
+- Commercial: Electricity
+- Industrial
+- Industrial: Electricity
+- Electric Power
+- Transportation
+
+<br>
+
+ 
 
   Create functions for downloading consumption data
 ```{r consmpFunctions, message=FALSE}
@@ -44,12 +53,17 @@ consumption.download <- function(state, sector) {
      require(dplyr)
      
      # Select proper sector code
-     if(sector == "all") {sc <- "TC"}
-     else if(sector == "commercial") {sc <- "CC"}
-     else if(sector == "electric") {sc <- "EI"}
-     else if(sector == "industrial") {sc <- "IC"}
-     else if(sector == "residential") {sc <- "RC"}
-     else if(sector == "transportation") {sc <- "AC"}
+     if(sector == "all") {sc <- ".TETCB."}
+     else if(sector == "all: electricity") {sc <- ".ESTCB."}
+     else if(sector == "commercial") {sc <- ".TECCB."}
+     else if(sector == "commercial: electricity") {sc <- ".ESCCB."}
+     else if(sector == "electric power") {sc <- ".TEEIB."}
+     else if(sector == "industrial") {sc <- ".TEICB."}
+     else if(sector == "industrial: electricity") {sc <- ".ESICB."}
+     else if(sector == "residential") {sc <- ".TERCB."}
+     else if(sector == "residential: electricity") {sc <- ".ESRCB."}
+     else if(sector == "transportation") {sc <- ".TEACB."}
+     else {print("Error, incorrect sector name")}
 
      # Create request key  
      suppressWarnings(ek <- readLines("EIAkey.txt"))
@@ -59,9 +73,8 @@ consumption.download <- function(state, sector) {
      meth <- "series/?"
      sabb <- state
      srID <- paste("&series_id=", 
-                   "SEDS.TE",
+                   "SEDS",
                    sc,
-                   "B.",
                    sabb,
                    ".A", 
                    sep = "")
@@ -76,20 +89,22 @@ consumption.download <- function(state, sector) {
      raw.result <- GET(url = call)
   
      print(raw.result$status_code)
-  
+     
      this.content <- raw.result$content %>%
           rawToChar() %>%
           fromJSON()
+     
+     #print(str(this.content))
   
      # Convert to data frame
      consumption <- as.data.frame(this.content$series$data) %>%
-          rename(year = X1, csmp.bill.btu = X2) %>%
+          rename(year = X1, value = X2) %>%
           mutate(state = sabb,
                  sector = sector,
                  year = as.integer(as.character(year)),
-                 csmp.bill.btu = 
-                      as.numeric(as.character(csmp.bill.btu))) %>%
-          select(year, state, sector, csmp.bill.btu) %>%
+                 unit = "Billions of Btu Consumed",
+                 value = as.numeric(as.character(value))) %>%
+          select(year, state, sector, unit, value) %>%
           filter(year >= 1960) 
   
      return(consumption)
@@ -110,17 +125,22 @@ state.consumption.getter <- function(state) {
   
      # Create vector of sectors to loop through
      sectors <- c("all",
+                  "all: electricity",
                   "commercial",
-                  "electric",
+                  "commercial: electricity",
+                  "electric power",
                   "industrial",
+                  "industrial: electricity",
                   "residential",
+                  "residential: electricity",
                   "transportation")
   
      # Initiate data frame
-     consumption <- data.frame(state = NULL,
-                               sector = NULL, 
-                               year = NULL,
-                               csmp.bill.btu = NULL)
+     consumption <- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               unit = NULL,
+                               value = NULL)
   
      # Loop through sectors, rowbinding data frames
      for(s in sectors){
@@ -142,14 +162,16 @@ state.consumption.compiler <- function(states) {
      # Takes a vector of uppercase two-letter state abbreviations and returns a
      # data frame with consumption data for each state in that list.
      
-     consumption <- data.frame(state = NULL, 
+     # Initialize data frame
+     consumption <- data.frame(year = NULL,
+                               state = NULL, 
                                sector = NULL,
-                               year = NULL,
-                               csmp.bill.btu = NULL)
+                               unit = NULL,
+                               value = NULL)
      
-     # loop over list of states
+     # Loop over list of states
      for(s in states){
-          # call state data compiler function
+          # Call state data compiler function
           consumption <- rbind(consumption,
                                state.consumption.getter(state = s))
      }
@@ -163,7 +185,7 @@ state.consumption.compiler <- function(states) {
 <br>
 
  Download consumption data
-```{r emissDownload}
+```{r consmpDownload, results="hide"}
 states <- c(state.abb, "DC")
 
 consumption.data <- state.consumption.compiler(states = states)
@@ -175,12 +197,24 @@ consumption.data <- state.consumption.compiler(states = states)
 
 ### Loading Emissions Data
 
+ For emissions data we are interested in emissions data for each of the five primary sectors as well as state totals, so for each state we will make 6 API requests. 
+
+- State Total
+- Residential
+- Commercial
+- Industrial
+- Electric Power
+- Transportation
+
+<br>
+
   Create functions for downloading emissions data
 ```{r emissFunctions, message=FALSE}
 # Function for downloading data files
 emission.download <- function(state, sector) {
      # Function takes two letter upper-case state abbreviation and name of
-     # desired sector as arguments and returns emission data set for that state      # and sector
+     # desired sector as arguments and returns emission data set for that state 
+     # and sector
      
      require(httr)
      require(jsonlite)
@@ -188,7 +222,7 @@ emission.download <- function(state, sector) {
   
      if(sector == "all") {sc <- "TT"}
      else if(sector == "commercial") {sc <- "CC"}
-     else if(sector == "electric") {sc <- "EC"}
+     else if(sector == "electric power") {sc <- "EC"}
      else if(sector == "industrial") {sc <- "IC"}
      else if(sector == "residential") {sc <- "RC"}
      else if(sector == "transportation") {sc <- "TC"}
@@ -202,6 +236,7 @@ emission.download <- function(state, sector) {
      sabb <- state
      srID <- paste("&series_id=", 
                    "EMISS.CO2-TOTV-",
+                   sc,
                    "-TO-",
                    sabb,
                    ".A", 
@@ -221,16 +256,18 @@ emission.download <- function(state, sector) {
      this.content <- raw.result$content %>%
           rawToChar() %>%
           fromJSON()
-  
+     
+     #print(str(this.content))
+     
      # Convert to data frame
      consumption <- as.data.frame(this.content$series$data) %>%
-          rename(year = X1, co2.mill.mtrc.ton = X2) %>%
+          rename(year = X1, value = X2) %>%
           mutate(state = sabb,
                  sector = sector,
                  year = as.integer(as.character(year)),
-                 co2.mill.mtrc.ton = 
-                      as.numeric(as.character(co2.mill.mtrc.ton))) %>%
-          select(year, state, sector, co2.mill.mtrc.ton) %>%
+                 unit = "Millions of Metric Tons of CO2 Emitted",
+                 value = as.numeric(as.character(value))) %>%
+          select(year, state, sector, unit, value) %>%
           filter(year >= 1960) 
   
      return(consumption)
@@ -249,21 +286,22 @@ state.emission.getter <- function(state) {
      # Function takes uppercase two-letter state abbreviation and returns data
      # frame with emission data for all sectors within that state
   
-     # create vector of sectors to loop through
+     # Create vector of sectors to loop through
      sectors <- c("all",
                   "commercial",
-                  "electric",
+                  "electric power",
                   "industrial",
                   "residential",
                   "transportation")
   
-     # initiate data frame
-     consumption <- data.frame(state = NULL,
-                               sector = NULL, 
-                               year = NULL,
-                               co2.mill.mtrc.ton = NULL)
+     # Initiate data frame
+     consumption <- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               unit = NULL,
+                               value = NULL)
   
-     # loop through sectors, rowbinding data frames
+     # Loop through sectors, rowbinding data frames
      for(s in sectors){
           # Call data downloading function
           consumption <- rbind(consumption,
@@ -279,14 +317,19 @@ state.emission.getter <- function(state) {
 
 # Function for compiling data sets for all states
 state.emission.compiler <- function(states) {
-     consumption <- data.frame(state = NULL, 
-                               sector = NULL,
-                               year = NULL,
-                               co2.mill.mtrc.ton = NULL)
+     # Takes a vector of uppercase two-letter state abbreviations and returns a
+     # data frame with emission data for each state in that list.
      
-     # loop over list of states
+     # Initialize data frame
+     consumption <- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               unit = NULL,
+                               value = NULL)
+     
+     # Loop over list of states
      for(s in states){
-          # call state data compiler function
+          # Call state data compiler function
           consumption <- rbind(consumption,
                                state.emission.getter(state = s))
      }
@@ -309,3 +352,160 @@ emission.data <- state.emission.compiler(states = states)
 <br>
 
 <br>
+<br>
+
+### Loading Expenditures (price) Data
+ For expenditures, as with consumption, we are interested in the totals for all five primary sectors as well as the electricity expenditures for the residential sector, commercial sector, industrial sector, and state total. Thus for each state we will make 10 API requests.
+ 
+- State Total
+- State Total: Electricity
+- Residential
+- Residential: Electricity
+- Commercial
+- Commercial: Electricity
+- Industrial
+- Industrial: Electricity
+- Electric Power
+- Transportation
+
+<br>
+
+ Create functions for downloading expenditures data
+```{r consmpFunctions, message=FALSE}
+# Function for downloading data files
+consumption.download <- function(state, sector) {
+     # Function takes two letter upper-case state abbreviation and name of
+     # desired sector as arguments and returns consumption data set for that
+     # state and sector
+     
+     require(httr)
+     require(jsonlite)
+     require(dplyr)
+     
+     # Select proper sector code
+     if(sector == "all") {sc <- ".TETCB."}
+     else if(sector == "commercial") {sc <- ".TECCB."}
+     else if(sector == "commercial: electricity") {sc <- ".ESCCB."}
+     else if(sector == "electric power") {sc <- ".TEEIB."}
+     else if(sector == "industrial") {sc <- ".TEICB."}
+     else if(sector == "industrial: electricity") {sc <- ".ESICB."}
+     else if(sector == "residential") {sc <- ".TERCB."}
+     else if(sector == "residential: electricity") {sc <- ".ESRCB."}
+     else if(sector == "transportation") {sc <- ".TEACB."}
+     else {print("Error, incorrect sector name")}
+
+     # Create request key  
+     suppressWarnings(ek <- readLines("EIAkey.txt"))
+     key <- paste("api_key=", ek, sep = ""); rm(ek)
+     uribase <- "http://api.eia.gov/"
+  
+     meth <- "series/?"
+     sabb <- state
+     srID <- paste("&series_id=", 
+                   "SEDS",
+                   sc,
+                   sabb,
+                   ".A", 
+                   sep = "")
+  
+     call <- paste(uribase,
+                   meth,
+                   key,
+                   srID,
+                   sep = "")
+  
+     # Get raw result to character format 
+     raw.result <- GET(url = call)
+  
+     print(raw.result$status_code)
+     
+     this.content <- raw.result$content %>%
+          rawToChar() %>%
+          fromJSON()
+     
+     #print(str(this.content))
+  
+     # Convert to data frame
+     consumption <- as.data.frame(this.content$series$data) %>%
+          rename(year = X1, value = X2) %>%
+          mutate(state = sabb,
+                 sector = sector,
+                 year = as.integer(as.character(year)),
+                 unit = "Billions of Btu Consumed",
+                 value = as.numeric(as.character(value))) %>%
+          select(year, state, sector, unit, value) %>%
+          filter(year >= 1960) 
+  
+     return(consumption)
+  
+     rm(sc, key, uribase,
+        meth, sabb, srID,
+        call, raw.result, this.content,
+        consumption)
+}
+
+################################################################################
+
+# Function for compiling individual state
+# data (across all sectors)
+state.consumption.getter <- function(state) {
+     # Function takes uppercase two-letter state abbreviation and returns data
+     # frame with consumption data for all sectors within that state
+  
+     # Create vector of sectors to loop through
+     sectors <- c("all",
+                  "commercial",
+                  "commercial: electricity",
+                  "electric power",
+                  "industrial",
+                  "industrial: electricity",
+                  "residential",
+                  "residential: electricity",
+                  "transportation")
+  
+     # Initiate data frame
+     consumption <- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               unit = NULL,
+                               value = NULL)
+  
+     # Loop through sectors, rowbinding data frames
+     for(s in sectors){
+          # Call data downloading function
+          consumption <- rbind(consumption,
+                               consumption.download(state = state, 
+                                                    sector = s))
+     }
+  
+     return(consumption)
+  
+     rm(sectors, consumption, s)
+}
+
+################################################################################
+
+# Function for compiling data sets for all states
+state.consumption.compiler <- function(states) {
+     # Takes a vector of uppercase two-letter state abbreviations and returns a
+     # data frame with consumption data for each state in that list.
+     
+     # Initialize data frame
+     consumption <- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               unit = NULL,
+                               value = NULL)
+     
+     # Loop over list of states
+     for(s in states){
+          # Call state data compiler function
+          consumption <- rbind(consumption,
+                               state.consumption.getter(state = s))
+     }
+  
+     return(consumption)
+  
+     rm(consumption, s)
+}
+```
