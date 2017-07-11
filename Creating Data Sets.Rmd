@@ -102,9 +102,10 @@ consumption.download <- function(state, sector) {
           mutate(state = sabb,
                  sector = sector,
                  year = as.integer(as.character(year)),
-                 unit = "Billions of Btu Consumed",
+                 measure = "Energy Consumption",
+                 unit = "Billions of Btus",
                  value = as.numeric(as.character(value))) %>%
-          select(year, state, sector, unit, value) %>%
+          select(year, state, sector, measure, unit, value) %>%
           filter(year >= 1960) 
   
      return(consumption)
@@ -139,6 +140,7 @@ sector.consumption.getter <- function(state) {
      consumption <- data.frame(year = NULL,
                                state = NULL, 
                                sector = NULL,
+                               measure = NULL,
                                unit = NULL,
                                value = NULL)
   
@@ -166,6 +168,7 @@ state.consumption.compiler <- function(states) {
      consumption <- data.frame(year = NULL,
                                state = NULL, 
                                sector = NULL,
+                               measure = NULL,
                                unit = NULL,
                                value = NULL)
      
@@ -265,9 +268,10 @@ emission.download <- function(state, sector) {
           mutate(state = sabb,
                  sector = sector,
                  year = as.integer(as.character(year)),
-                 unit = "Millions of Metric Tons of CO2 Emitted",
+                 measure = "CO2 Emissions",
+                 unit = "Millions of Metric Tons",
                  value = as.numeric(as.character(value))) %>%
-          select(year, state, sector, unit, value) %>%
+          select(year, state, sector, measure, unit, value) %>%
           filter(year >= 1960) 
   
      return(consumption)
@@ -298,6 +302,7 @@ sector.emission.getter <- function(state) {
      consumption <- data.frame(year = NULL,
                                state = NULL, 
                                sector = NULL,
+                               measure = NULL,
                                unit = NULL,
                                value = NULL)
   
@@ -324,6 +329,7 @@ state.emission.compiler <- function(states) {
      consumption <- data.frame(year = NULL,
                                state = NULL, 
                                sector = NULL,
+                               measure = NULL,
                                unit = NULL,
                                value = NULL)
      
@@ -432,9 +438,10 @@ expenditures.download <- function(state, sector) {
           mutate(state = sabb,
                  sector = sector,
                  year = as.integer(as.character(year)),
-                 unit = "Millions of Dollars Spent",
+                 measure = "Energy Expenditures",
+                 unit = "Millions of Dollars",
                  value = as.numeric(as.character(value))) %>%
-          select(year, state, sector, unit, value) %>%
+          select(year, state, sector, measure, unit, value) %>%
           filter(year >= 1960) 
   
      return(consumption)
@@ -469,6 +476,7 @@ sector.expenditures.getter <- function(state) {
      consumption <- data.frame(year = NULL,
                                state = NULL, 
                                sector = NULL,
+                               measure = NULL,
                                unit = NULL,
                                value = NULL)
   
@@ -496,6 +504,7 @@ state.expenditures.compiler <- function(states) {
      consumption <- data.frame(year = NULL,
                                state = NULL, 
                                sector = NULL,
+                               measure = NULL,
                                unit = NULL,
                                value = NULL)
      
@@ -598,10 +607,11 @@ gdp.download <- function(component, years){
                  unit = Code,
                  value = DataValue) %>%
           mutate(year = as.integer(year),
+                 measure = "Gross Domestic Product",
                  unit = units,
                  value = as.integer(value),
                  sector = NA) %>%
-          select(year, state, sector, unit, value)
+          select(year, state, sector, measure, unit, value)
      
      states <- c(state.name, "District of Columbia", "United States")
      
