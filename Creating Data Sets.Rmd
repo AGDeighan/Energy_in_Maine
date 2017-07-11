@@ -934,7 +934,7 @@ gdp.data <- gdp.sic.naics()
 
 <br>
 
- Adding **region** and **division** columns to consumption data set: 
+ Adding **region** and **division** columns to data sets: 
 ```{r addDivReg, results="hide", cache=TRUE}
 # Create function for changing state abbreviations to full names
 name.changer <- function(abb){
@@ -945,6 +945,25 @@ name.changer <- function(abb){
      name <- statenames[stateabbs == abb]
      return(name)
 }
+
+# Create function for changing state abbreviations to full names for 
+# an entire data set
+name.changer2 <- function(dataset){
+     require(dplyr)
+     
+     dataset <- dataset %>%
+          mutate(state = as.character(lapply(state, name.changer)))
+     
+     return(dataset)
+}
+
+# Update data sets
+consumption.data <- name.changer2(consumption.data)
+emissions.data <- name.changer2(emissions.data)
+expenditures.data <- name.changer2(expenditures.data)
+production.data <- name.changer2(production.data)
+population.data <- name.changer2(population.data)
+gdp.data <- gdp.data %>% mutate(state = tolower(state))
 
 # Create function for determining division
 find.div <- function(state){
@@ -970,54 +989,36 @@ find.reg <- function(div){
      return(region)
 }
 
-
-# Update consumption data set
-
-consumption.data <- consumption.data %>%
-     mutate(state = as.character(lapply(state, name.changer)),
-            division = as.character(lapply(state, find.div)),
-            region = as.character(lapply(division, find.reg))) %>%
-     select(year, state, region, division, sector, measure, unit, value)
-
-```
-
-<br>
-
- Now that we have added region and division values to the consumption data set we will merge all the data sets together:
-```{r mergeDatasets, results="hide", cache=TRUE}
-# First we will make sure all the data sets have full state names for the
-# "state" variable before merging
-name.changer2 <- function(dataset){
-     require(dplyr)
-     
+# Create function for setting regions and divisions in data set
+regdiv.setter<- function(dataset){
      dataset <- dataset %>%
-          mutate(state = as.character(lapply(state, name.changer)))
+          mutate(division = as.character(lapply(state, find.div)),
+                 region = as.character(lapply(division, find.reg))) %>%
+          select(year, state, region, division, sector, measure, unit, value)
      
-     return(dataset)
 }
 
-emissions.data <- name.changer2(emissions.data)
-expenditures.data <- name.changer2(expenditures.data)
-production.data <- name.changer2(production.data)
-population.data <- name.changer2(population.data)
+# Update data sets
 
-# Now we will merge the data sets
-merged <- consumption.data %>% 
-     merge(emissions.data,
-           by("year", "state", "sector"), all.x = TRUE) %>%
-     merge(expenditures.data,
-           by("year", "state", "sector"), all.x = TRUE) %>%
-     merge(production.data,
-           by("year", "state"), all.x = TRUE) %>%
-     merge(population.data,
-           by("year", "state"), all.x = TRUE) %>%
-     merge(gdp.data,
-           by("year", "state"), all.x = TRUE)
+consumption.data <- regdiv.setter(consumption.data)
+emissions.data <- regdiv.setter(emissions.data)
+expenditures.data <- regdiv.setter(expenditures.data)
+production.data <- regdiv.setter(production.data)
+population.data <- regdiv.setter(population.data)
+gdp.data <- regdiv.setter(gdp.data)
 
-
+# Now we will rowbind the datasets into one long data set
+MasterTidy <- rbind(consumption.data,
+                    emissions.data,
+                    expenditures.data,
+                    production.data,
+                    population.data,
+                    gdp.data)
 ```
  
+<br>
 
+ The MasterTidy dataset we created above is perfect for most applications in R, but not ideal for working in Excel. Since the plan is to eventually use this data in an excel dashboard, we will create a new wider dataset with columns for each different measure and within each column will be the values that used to be in the column "value".
 
 
 

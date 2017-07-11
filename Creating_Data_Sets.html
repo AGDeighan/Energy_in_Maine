@@ -123,17 +123,950 @@ $(document).ready(function () {
 </div>
 
 
+<p>Load necessary libraries</p>
 <pre class="r"><code>library(httr)
-library(dplyr)</code></pre>
-<pre><code>## 
-## Attaching package: 'dplyr'</code></pre>
-<pre><code>## The following objects are masked from 'package:stats':
-## 
-##     filter, lag</code></pre>
-<pre><code>## The following objects are masked from 'package:base':
-## 
-##     intersect, setdiff, setequal, union</code></pre>
-<pre class="r"><code>library(tidyr)</code></pre>
+library(jsonlite)
+library(dplyr)
+library(tidyr)</code></pre>
+<p><br></p>
+<div id="loading-data-via-apis" class="section level2">
+<h2>Loading Data Via APIs</h2>
+<p>For consumption, emissions, and expenditures there are individual data sets for each sector. Thus, multiple API requests must be made for each state.</p>
+<p><br></p>
+<div id="loading-consumption-data" class="section level3">
+<h3>Loading Consumption Data</h3>
+<p>For consumption data we are interested in the five primary sectors: residential, commercial, industrial, electric power, and transportation. Additionally, for the residential, commericial, and industrial, sectors we are also specifically interested in consumption data for electricity. Finally, we also want total consumption data across all sectors and total electricity consumption across all sectors. Thus for each state we will make 10 API requests:</p>
+<ul>
+<li>State Total</li>
+<li>State Total: Electricity</li>
+<li>Residential</li>
+<li>Residential: Electricity</li>
+<li>Commercial</li>
+<li>Commercial: Electricity</li>
+<li>Industrial</li>
+<li>Industrial: Electricity</li>
+<li>Electric Power</li>
+<li>Transportation</li>
+</ul>
+<p><br></p>
+<p>Create functions for downloading consumption data</p>
+<pre class="r"><code># Function for downloading data files
+consumption.download &lt;- function(state, sector) {
+     # Function takes two letter upper-case state abbreviation and name of
+     # desired sector as arguments and returns consumption data set for that
+     # state and sector
+     
+     require(httr)
+     require(jsonlite)
+     require(dplyr)
+     
+     # Select proper sector code
+     if(sector == &quot;all&quot;) {sc &lt;- &quot;.TETCB.&quot;}
+     else if(sector == &quot;all: electricity&quot;) {sc &lt;- &quot;.ESTCB.&quot;}
+     else if(sector == &quot;commercial&quot;) {sc &lt;- &quot;.TECCB.&quot;}
+     else if(sector == &quot;commercial: electricity&quot;) {sc &lt;- &quot;.ESCCB.&quot;}
+     else if(sector == &quot;electric power&quot;) {sc &lt;- &quot;.TEEIB.&quot;}
+     else if(sector == &quot;industrial&quot;) {sc &lt;- &quot;.TEICB.&quot;}
+     else if(sector == &quot;industrial: electricity&quot;) {sc &lt;- &quot;.ESICB.&quot;}
+     else if(sector == &quot;residential&quot;) {sc &lt;- &quot;.TERCB.&quot;}
+     else if(sector == &quot;residential: electricity&quot;) {sc &lt;- &quot;.ESRCB.&quot;}
+     else if(sector == &quot;transportation&quot;) {sc &lt;- &quot;.TEACB.&quot;}
+     else {print(&quot;Error, incorrect sector name&quot;)}
+
+     # Create request key  
+     suppressWarnings(ek &lt;- readLines(&quot;EIAkey.txt&quot;))
+     key &lt;- paste(&quot;api_key=&quot;, ek, sep = &quot;&quot;); rm(ek)
+     uribase &lt;- &quot;http://api.eia.gov/&quot;
+  
+     meth &lt;- &quot;series/?&quot;
+     sabb &lt;- state
+     srID &lt;- paste(&quot;&amp;series_id=&quot;, 
+                   &quot;SEDS&quot;,
+                   sc,
+                   sabb,
+                   &quot;.A&quot;, 
+                   sep = &quot;&quot;)
+  
+     call &lt;- paste(uribase,
+                   meth,
+                   key,
+                   srID,
+                   sep = &quot;&quot;)
+  
+     # Get raw result to character format 
+     raw.result &lt;- GET(url = call)
+  
+     print(raw.result$status_code)
+     
+     this.content &lt;- raw.result$content %&gt;%
+          rawToChar() %&gt;%
+          fromJSON()
+     
+     #print(str(this.content))
+  
+     # Convert to data frame
+     consumption &lt;- as.data.frame(this.content$series$data) %&gt;%
+          rename(year = X1, value = X2) %&gt;%
+          mutate(state = sabb,
+                 sector = sector,
+                 year = as.integer(as.character(year)),
+                 measure = &quot;Energy Consumption&quot;,
+                 unit = &quot;Billions of Btus&quot;,
+                 value = as.numeric(as.character(value))) %&gt;%
+          select(year, state, sector, measure, unit, value) %&gt;%
+          filter(year &gt;= 1960) 
+  
+     return(consumption)
+  
+     rm(sc, key, uribase,
+        meth, sabb, srID,
+        call, raw.result, this.content,
+        consumption)
+}
+
+################################################################################
+
+# Function for compiling individual state
+# data (across all sectors)
+sector.consumption.getter &lt;- function(state) {
+     # Function takes uppercase two-letter state abbreviation and returns data
+     # frame with consumption data for all sectors within that state
+  
+     # Create vector of sectors to loop through
+     sectors &lt;- c(&quot;all&quot;,
+                  &quot;all: electricity&quot;,
+                  &quot;commercial&quot;,
+                  &quot;commercial: electricity&quot;,
+                  &quot;electric power&quot;,
+                  &quot;industrial&quot;,
+                  &quot;industrial: electricity&quot;,
+                  &quot;residential&quot;,
+                  &quot;residential: electricity&quot;,
+                  &quot;transportation&quot;)
+  
+     # Initiate data frame
+     consumption &lt;- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               measure = NULL,
+                               unit = NULL,
+                               value = NULL)
+  
+     # Loop through sectors, rowbinding data frames
+     for(s in sectors){
+          # Call data downloading function
+          consumption &lt;- rbind(consumption,
+                               consumption.download(state = state, 
+                                                    sector = s))
+     }
+  
+     return(consumption)
+  
+     rm(sectors, consumption, s)
+}
+
+################################################################################
+
+# Function for compiling data sets for all states
+state.consumption.compiler &lt;- function(states) {
+     # Takes a vector of uppercase two-letter state abbreviations and returns a
+     # data frame with consumption data for each state in that list.
+     
+     # Initialize data frame
+     consumption &lt;- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               measure = NULL,
+                               unit = NULL,
+                               value = NULL)
+     
+     # Loop over list of states
+     for(s in states){
+          # Call state data compiler function
+          consumption &lt;- rbind(consumption,
+                               sector.consumption.getter(state = s))
+     }
+  
+     return(consumption)
+  
+     rm(consumption, s)
+}</code></pre>
+<p><br></p>
+<p>Download consumption data</p>
+<pre class="r"><code>states &lt;- c(state.abb, &quot;DC&quot;)
+
+consumption.data &lt;- state.consumption.compiler(states = states)</code></pre>
+<p><br> <br></p>
+</div>
+<div id="loading-emissions-data" class="section level3">
+<h3>Loading Emissions Data</h3>
+<p>For emissions data we are interested in emissions data for each of the five primary sectors as well as state totals, so for each state we will make 6 API requests.</p>
+<ul>
+<li>State Total</li>
+<li>Residential</li>
+<li>Commercial</li>
+<li>Industrial</li>
+<li>Electric Power</li>
+<li>Transportation</li>
+</ul>
+<p><br></p>
+<p>Create functions for downloading emissions data</p>
+<pre class="r"><code># Function for downloading data files
+emission.download &lt;- function(state, sector) {
+     # Function takes two letter upper-case state abbreviation and name of
+     # desired sector as arguments and returns emission data set for that state 
+     # and sector
+     
+     require(httr)
+     require(jsonlite)
+     require(dplyr)
+  
+     if(sector == &quot;all&quot;) {sc &lt;- &quot;TT&quot;}
+     else if(sector == &quot;commercial&quot;) {sc &lt;- &quot;CC&quot;}
+     else if(sector == &quot;electric power&quot;) {sc &lt;- &quot;EC&quot;}
+     else if(sector == &quot;industrial&quot;) {sc &lt;- &quot;IC&quot;}
+     else if(sector == &quot;residential&quot;) {sc &lt;- &quot;RC&quot;}
+     else if(sector == &quot;transportation&quot;) {sc &lt;- &quot;TC&quot;}
+
+     # Create request key  
+     suppressWarnings(ek &lt;- readLines(&quot;EIAkey.txt&quot;))
+     key &lt;- paste(&quot;api_key=&quot;, ek, sep = &quot;&quot;); rm(ek)
+     uribase &lt;- &quot;http://api.eia.gov/&quot;
+  
+     meth &lt;- &quot;series/?&quot;
+     sabb &lt;- state
+     srID &lt;- paste(&quot;&amp;series_id=&quot;, 
+                   &quot;EMISS.CO2-TOTV-&quot;,
+                   sc,
+                   &quot;-TO-&quot;,
+                   sabb,
+                   &quot;.A&quot;, 
+                   sep = &quot;&quot;)
+  
+     call &lt;- paste(uribase,
+                   meth,
+                   key,
+                   srID,
+                   sep = &quot;&quot;)
+  
+     # Get raw result to character format 
+     raw.result &lt;- GET(url = call)
+  
+     print(raw.result$status_code)
+  
+     this.content &lt;- raw.result$content %&gt;%
+          rawToChar() %&gt;%
+          fromJSON()
+     
+     #print(str(this.content))
+     
+     # Convert to data frame
+     consumption &lt;- as.data.frame(this.content$series$data) %&gt;%
+          rename(year = X1, value = X2) %&gt;%
+          mutate(state = sabb,
+                 sector = sector,
+                 year = as.integer(as.character(year)),
+                 measure = &quot;CO2 Emissions&quot;,
+                 unit = &quot;Millions of Metric Tons&quot;,
+                 value = as.numeric(as.character(value))) %&gt;%
+          select(year, state, sector, measure, unit, value) %&gt;%
+          filter(year &gt;= 1960) 
+  
+     return(consumption)
+  
+     rm(sc, key, uribase,
+        meth, sabb, srID,
+        call, raw.result, this.content,
+        consumption)
+}
+
+################################################################################
+
+# Function for compiling individual state
+# data (across all sectors)
+sector.emission.getter &lt;- function(state) {
+     # Function takes uppercase two-letter state abbreviation and returns data
+     # frame with emission data for all sectors within that state
+  
+     # Create vector of sectors to loop through
+     sectors &lt;- c(&quot;all&quot;,
+                  &quot;commercial&quot;,
+                  &quot;electric power&quot;,
+                  &quot;industrial&quot;,
+                  &quot;residential&quot;,
+                  &quot;transportation&quot;)
+  
+     # Initiate data frame
+     consumption &lt;- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               measure = NULL,
+                               unit = NULL,
+                               value = NULL)
+  
+     # Loop through sectors, rowbinding data frames
+     for(s in sectors){
+          # Call data downloading function
+          consumption &lt;- rbind(consumption,
+                               emission.download(state = state, sector = s))
+     }
+  
+     return(consumption)
+  
+     rm(sectors, consumption, s)
+}
+
+################################################################################
+
+# Function for compiling data sets for all states
+state.emission.compiler &lt;- function(states) {
+     # Takes a vector of uppercase two-letter state abbreviations and returns a
+     # data frame with emission data for each state in that list.
+     
+     # Initialize data frame
+     consumption &lt;- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               measure = NULL,
+                               unit = NULL,
+                               value = NULL)
+     
+     # Loop over list of states
+     for(s in states){
+          # Call state data compiler function
+          consumption &lt;- rbind(consumption,
+                               sector.emission.getter(state = s))
+     }
+  
+     return(consumption)
+  
+     rm(consumption, s)
+}</code></pre>
+<p><br></p>
+<p>Download emissions data</p>
+<pre class="r"><code>states &lt;- c(state.abb, &quot;DC&quot;)
+
+emissions.data &lt;- state.emission.compiler(states = states)</code></pre>
+<p><br></p>
+<p><br> <br></p>
+</div>
+<div id="loading-expenditures-price-data" class="section level3">
+<h3>Loading Expenditures (price) Data</h3>
+<p>For expenditures, as with consumption, we are interested in the totals for all five primary sectors as well as the electricity expenditures for the residential sector, commercial sector, industrial sector, and state total. Thus for each state we will make 10 API requests.</p>
+<ul>
+<li>State Total</li>
+<li>State Total: Electricity</li>
+<li>Residential</li>
+<li>Residential: Electricity</li>
+<li>Commercial</li>
+<li>Commercial: Electricity</li>
+<li>Industrial</li>
+<li>Industrial: Electricity</li>
+<li>Electric Power</li>
+<li>Transportation</li>
+</ul>
+<p><br></p>
+<p>Create functions for downloading expenditures data</p>
+<pre class="r"><code># Function for downloading data files
+expenditures.download &lt;- function(state, sector) {
+     # Function takes two letter upper-case state abbreviation and name of
+     # desired sector as arguments and returns expenditure data set for that
+     # state and sector
+     
+     require(httr)
+     require(jsonlite)
+     require(dplyr)
+     
+     # Select proper sector code
+     if(sector == &quot;all&quot;) {sc &lt;- &quot;.TETCV.&quot;}
+     else if(sector == &quot;all: electricity&quot;) {sc &lt;- &quot;.ESTCV.&quot;}
+     else if(sector == &quot;commercial&quot;) {sc &lt;- &quot;.TECCV.&quot;}
+     else if(sector == &quot;commercial: electricity&quot;) {sc &lt;- &quot;.ESCCV.&quot;}
+     #else if(sector == &quot;electric power&quot;) {sc &lt;- &quot;.TEEIB.&quot;}
+     else if(sector == &quot;industrial&quot;) {sc &lt;- &quot;.TEICV.&quot;}
+     else if(sector == &quot;industrial: electricity&quot;) {sc &lt;- &quot;.ESICV.&quot;}
+     else if(sector == &quot;residential&quot;) {sc &lt;- &quot;.TERCV.&quot;}
+     else if(sector == &quot;residential: electricity&quot;) {sc &lt;- &quot;.ESRCV.&quot;}
+     else if(sector == &quot;transportation&quot;) {sc &lt;- &quot;.TEACV.&quot;}
+     else {print(&quot;Error, incorrect sector name&quot;); print(sector)}
+
+     # Create request key  
+     suppressWarnings(ek &lt;- readLines(&quot;EIAkey.txt&quot;))
+     key &lt;- paste(&quot;api_key=&quot;, ek, sep = &quot;&quot;); rm(ek)
+     uribase &lt;- &quot;http://api.eia.gov/&quot;
+  
+     meth &lt;- &quot;series/?&quot;
+     sabb &lt;- state
+     srID &lt;- paste(&quot;&amp;series_id=&quot;, 
+                   &quot;SEDS&quot;,
+                   sc,
+                   sabb,
+                   &quot;.A&quot;, 
+                   sep = &quot;&quot;)
+  
+     call &lt;- paste(uribase,
+                   meth,
+                   key,
+                   srID,
+                   sep = &quot;&quot;)
+  
+     # Get raw result to character format 
+     raw.result &lt;- GET(url = call)
+  
+     print(raw.result$status_code)
+     
+     this.content &lt;- raw.result$content %&gt;%
+          rawToChar() %&gt;%
+          fromJSON()
+     
+     #print(str(this.content))
+  
+     # Convert to data frame
+     consumption &lt;- as.data.frame(this.content$series$data) %&gt;%
+          rename(year = X1, value = X2) %&gt;%
+          mutate(state = sabb,
+                 sector = sector,
+                 year = as.integer(as.character(year)),
+                 measure = &quot;Energy Expenditures&quot;,
+                 unit = &quot;Millions of Dollars&quot;,
+                 value = as.numeric(as.character(value))) %&gt;%
+          select(year, state, sector, measure, unit, value) %&gt;%
+          filter(year &gt;= 1960) 
+  
+     return(consumption)
+  
+     rm(sc, key, uribase,
+        meth, sabb, srID,
+        call, raw.result, this.content,
+        consumption)
+}
+
+################################################################################
+
+# Function for compiling individual state
+# data (across all sectors)
+sector.expenditures.getter &lt;- function(state) {
+     # Function takes uppercase two-letter state abbreviation and returns data
+     # frame with expenditure data for all sectors within that state
+  
+     # Create vector of sectors to loop through
+     sectors &lt;- c(&quot;all&quot;,
+                  &quot;all: electricity&quot;,
+                  &quot;commercial&quot;,
+                  &quot;commercial: electricity&quot;,
+                  #&quot;electric power&quot;,
+                  &quot;industrial&quot;,
+                  &quot;industrial: electricity&quot;,
+                  &quot;residential&quot;,
+                  &quot;residential: electricity&quot;,
+                  &quot;transportation&quot;)
+  
+     # Initiate data frame
+     consumption &lt;- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               measure = NULL,
+                               unit = NULL,
+                               value = NULL)
+  
+     # Loop through sectors, rowbinding data frames
+     for(s in sectors){
+          # Call data downloading function
+          consumption &lt;- rbind(consumption,
+                               expenditures.download(state = state, 
+                                                    sector = s))
+     }
+  
+     return(consumption)
+  
+     rm(sectors, consumption, s)
+}
+
+################################################################################
+
+# Function for compiling data sets for all states
+state.expenditures.compiler &lt;- function(states) {
+     # Takes a vector of uppercase two-letter state abbreviations and returns a
+     # data frame with expenditure data for each state in that list.
+     
+     # Initialize data frame
+     consumption &lt;- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               measure = NULL,
+                               unit = NULL,
+                               value = NULL)
+     
+     # Loop over list of states
+     for(s in states){
+          # Call state data compiler function
+          consumption &lt;- rbind(consumption,
+                               sector.expenditures.getter(state = s))
+     }
+  
+     return(consumption)
+  
+     rm(consumption, s)
+}</code></pre>
+<p><br></p>
+<p>Download expenditures data</p>
+<pre class="r"><code>states &lt;- c(state.abb, &quot;DC&quot;)
+
+expenditures.data &lt;- state.expenditures.compiler(states = states)</code></pre>
+<p><br> <br></p>
+</div>
+<div id="loading-energy-production-data" class="section level3">
+<h3>Loading Energy Production Data</h3>
+<p>For energy production data we are interested in total state energy production and total state renewable energy (excluding ethanol) production. Thus for each state we will be making two API requests:</p>
+<ul>
+<li>Total Energy Production</li>
+<li>Renewable (excluding ethanol) Energy Production</li>
+</ul>
+<p><br></p>
+<p>Create functions for downloading consumption data</p>
+<pre class="r"><code># Function for downloading data files
+production.download &lt;- function(state, segment) {
+     # Function takes two letter upper-case state abbreviation and name of
+     # desired segment ('total production' or 'renewable') as arguments and
+     # returns production data set for that state and segment
+     
+     require(httr)
+     require(jsonlite)
+     require(dplyr)
+     
+     # Select proper segment code
+     if(segment == 'total production') {
+          sc &lt;- &quot;.TEPRB.&quot;
+          meas &lt;- &quot;Total Energy Production&quot;
+     }
+     else if(segment == &quot;renewable&quot;) {
+          sc &lt;- &quot;.ROPRB.&quot;
+          meas &lt;- &quot;Renewable Energy Production&quot;
+     }
+     
+     # Create request key  
+     suppressWarnings(ek &lt;- readLines(&quot;EIAkey.txt&quot;))
+     key &lt;- paste(&quot;api_key=&quot;, ek, sep = &quot;&quot;); rm(ek)
+     uribase &lt;- &quot;http://api.eia.gov/&quot;
+  
+     meth &lt;- &quot;series/?&quot;
+     sabb &lt;- state
+     srID &lt;- paste(&quot;&amp;series_id=&quot;, 
+                   &quot;SEDS&quot;,
+                   sc,
+                   sabb,
+                   &quot;.A&quot;, 
+                   sep = &quot;&quot;)
+  
+     call &lt;- paste(uribase,
+                   meth,
+                   key,
+                   srID,
+                   sep = &quot;&quot;)
+  
+     # Get raw result to character format 
+     raw.result &lt;- GET(url = call)
+  
+     print(raw.result$status_code)
+     
+     this.content &lt;- raw.result$content %&gt;%
+          rawToChar() %&gt;%
+          fromJSON()
+     
+     #print(str(this.content))
+  
+     # Convert to data frame
+     consumption &lt;- as.data.frame(this.content$series$data) %&gt;%
+          rename(year = X1, value = X2) %&gt;%
+          mutate(state = sabb,
+                 sector = NA,
+                 year = as.integer(as.character(year)),
+                 measure = meas,
+                 unit = &quot;Billions of Btus&quot;,
+                 value = as.numeric(as.character(value))) %&gt;%
+          select(year, state, sector, measure, unit, value) %&gt;%
+          filter(year &gt;= 1960) 
+  
+     return(consumption)
+  
+     rm(sc, key, uribase,
+        meth, sabb, srID,
+        call, raw.result, this.content,
+        consumption)
+}
+
+################################################################################
+
+# Function for compiling individual state data
+segment.production.getter &lt;- function(state) {
+     # Function takes uppercase two-letter state abbreviation and returns data
+     # frame with both total and renewable only energy production within that
+     # state
+  
+     # Create vector of segments to loop through
+     sectors &lt;- c(&quot;total production&quot;,
+                  &quot;renewable&quot;)
+  
+     # Initiate data frame
+     consumption &lt;- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               measure = NULL,
+                               unit = NULL,
+                               value = NULL)
+  
+     # Loop through segments, rowbinding data frames
+     for(s in sectors){
+          # Call data downloading function
+          consumption &lt;- rbind(consumption,
+                               production.download(state = state, 
+                                                   segment = s))
+     }
+  
+     return(consumption)
+  
+     rm(sectors, consumption, s)
+}
+
+################################################################################
+
+# Function for compiling data sets for all states
+state.production.compiler &lt;- function(states) {
+     # Takes a vector of uppercase two-letter state abbreviations and returns a
+     # data frame with energy production data for each state in that list.
+     
+     # Initialize data frame
+     consumption &lt;- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               measure = NULL,
+                               unit = NULL,
+                               value = NULL)
+     
+     # Loop over list of states
+     for(s in states){
+          # Call state data compiler function
+          consumption &lt;- rbind(consumption,
+                               segment.production.getter(state = s))
+     }
+  
+     return(consumption)
+  
+     rm(consumption, s)
+}</code></pre>
+<p><br></p>
+<p>Download production data</p>
+<pre class="r"><code>states &lt;- c(state.abb, &quot;DC&quot;)
+
+production.data &lt;- state.production.compiler(states = states)</code></pre>
+<p><br> <br></p>
+</div>
+<div id="loading-population-data" class="section level3">
+<h3>Loading Population Data</h3>
+<p>In addition to information on energy use, production, cost, and emissions we also want more demographic/economic data on state population and gross domestic product (GDP). State population figures we can request directly from the EIA via their API. The EIA also has GDP data for states, but not as far back as th 1960s, so we will have to go elsewhere to get this information (explained in next <a href="#loading-gdp-data">section</a>). For population data we only need to make one API request per state:</p>
+<ul>
+<li>Total State Population</li>
+</ul>
+<p><br></p>
+<p>Create functions for retrieving population data:</p>
+<pre class="r"><code># Function for downloading data files
+population.download &lt;- function(state) {
+     # Function takes two letter upper-case state abbreviation as an argument 
+     # and returns population data set for that state.
+     
+     require(httr)
+     require(jsonlite)
+     require(dplyr)
+     
+     # Create request key  
+     suppressWarnings(ek &lt;- readLines(&quot;EIAkey.txt&quot;))
+     key &lt;- paste(&quot;api_key=&quot;, ek, sep = &quot;&quot;); rm(ek)
+     uribase &lt;- &quot;http://api.eia.gov/&quot;
+  
+     meth &lt;- &quot;series/?&quot;
+     sabb &lt;- state
+     srID &lt;- paste(&quot;&amp;series_id=SEDS.TPOPP.&quot;,
+                   sabb,
+                   &quot;.A&quot;, 
+                   sep = &quot;&quot;)
+  
+     call &lt;- paste(uribase,
+                   meth,
+                   key,
+                   srID,
+                   sep = &quot;&quot;)
+  
+     # Get raw result to character format 
+     raw.result &lt;- GET(url = call)
+  
+     print(raw.result$status_code)
+     
+     this.content &lt;- raw.result$content %&gt;%
+          rawToChar() %&gt;%
+          fromJSON()
+     
+     #print(str(this.content))
+  
+     # Convert to data frame
+     consumption &lt;- as.data.frame(this.content$series$data) %&gt;%
+          rename(year = X1, value = X2) %&gt;%
+          mutate(state = sabb,
+                 sector = NA,
+                 year = as.integer(as.character(year)),
+                 measure = &quot;Population&quot;,
+                 unit = &quot;Thousands of Persons&quot;,
+                 value = as.numeric(as.character(value))) %&gt;%
+          select(year, state, sector, measure, unit, value) %&gt;%
+          filter(year &gt;= 1960) 
+  
+     return(consumption)
+  
+     rm(sc, key, uribase,
+        meth, sabb, srID,
+        call, raw.result, this.content,
+        consumption)
+}
+
+################################################################################
+
+# Function for compiling data sets for all states
+state.population.compiler &lt;- function(states) {
+     # Takes a vector of uppercase two-letter state abbreviations and returns a
+     # data frame with population data for each state in that list.
+     
+     # Initialize data frame
+     consumption &lt;- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               measure = NULL,
+                               unit = NULL,
+                               value = NULL)
+     
+     # Loop over list of states
+     for(s in states){
+          # Call state data compiler function
+          consumption &lt;- rbind(consumption,
+                               population.download(state = s))
+     }
+  
+     return(consumption)
+  
+     rm(consumption, s)
+}</code></pre>
+<p><br></p>
+<p>Download population data</p>
+<pre class="r"><code>states &lt;- c(state.abb, &quot;DC&quot;)
+
+population.data &lt;- state.population.compiler(states = states)</code></pre>
+<p><br> <br></p>
+</div>
+<div id="loading-gdp-data" class="section level3">
+<h3>Loading GDP Data</h3>
+<p>The GDP data were aquired from the Bureau of Economic Analysis (BEA). Before 1997 BEA used the Standard Industrial Classification (SIC) system for classifying industries when calculating GDP. In 1997, BEA switched to using the North American Industry Classification System (NAICS). For 1997 BEA reports GDP estimates calculate using both the NAICS and SIC system. The fact the the 1997 estimates differ slightly between these two systems should be kept in mind when are comparing pre and post 1997 GDP data. That being said, we will use GDP estimates calculated using the SIC system for years before 1997 and NAICS for years from 1997 onwards. We will use current dollar GDP values rather than GDP values adjusted for inflation. Since our planned analysis primarily involves Maine’s <em>relative</em> performance to the rest of the country, adjusting GDP values for inflation would have no effect (since the conversion factor would cancel out).</p>
+<p><br></p>
+<p>Create functions for fetching GDP data</p>
+<pre class="r"><code>gdp.download &lt;- function(component, years, states = NULL){
+     # Function takes two arguments, component name (string) and a vector of
+     # years (integer). The function returns a data frame with total industry
+     # GDP data for those years, for all states.
+     
+     require(httr)
+     require(jsonlite)
+     require(dplyr)
+     
+     # Load user API key from text file
+     suppressWarnings(bk &lt;- readLines(&quot;beakey.txt&quot;))
+     key &lt;- paste(&quot;?&amp;UserID=&quot;, bk, sep = &quot;&quot;)
+     # Specify base uri
+     uri &lt;- &quot;https://www.bea.gov/api/data&quot;
+  
+     # Choose the &quot;get data&quot; method which is for requesting data
+     meth &lt;- &quot;GetData&quot;
+     # Choose the data set, the regional product data set includes GDP data
+     # for all states, the country as a whole, and several regions of the
+     # country (we will remove the regional data)
+     ds &lt;- &quot;RegionalProduct&quot;
+     # Specify which GDP compenent we're interested in (NAICS or SIC)
+     comp &lt;- component
+     # Request GDP data for all states unless specific states are specified
+     if(is.null(states)) {area &lt;- &quot;STATE&quot;}
+     else {area &lt;- paste(states, collapse = &quot;,&quot;)}
+     # The industry code &quot;1&quot; indicates that we want the total GDP data for
+     # all industries
+     inds &lt;- 1
+     # Request GDP data for designated years
+     year &lt;- paste(years, collapse = &quot;,&quot;)
+     
+     # Construct API call
+     call &lt;- paste(uri, 
+                   key,
+                   &quot;&amp;method=&quot;, meth,
+                   &quot;&amp;datasetname=&quot;, ds,
+                   &quot;&amp;Component=&quot;, comp,
+                   &quot;&amp;GeoFips=&quot;, area,
+                   &quot;&amp;IndustryId=&quot;, inds,
+                   &quot;&amp;Year=&quot;, year,
+                   sep = &quot;&quot;)
+     
+     content &lt;- GET(url = call)$content %&gt;%
+     rawToChar() %&gt;%
+     fromJSON()
+     
+     if(length(names(content$BEAAPI$Results)) == 1){
+          if(names(content$BEAAPI$Results) == 1){
+               stop(&quot;Error in API request, likely invalid component name&quot;)
+          }
+          else{
+               print(&quot;may be some error... check code and output carefully&quot;)
+          }
+     }
+     
+     if(component == &quot;GDP_SAS&quot;){units &lt;- &quot;SIC GDP: Millions of Current Dollars&quot;}
+     else if(component == &quot;GDP_SAN&quot;){units &lt;- &quot;NAICS GDP: Millions of Current Dollars&quot;}
+     else{units &lt;- component}
+     
+     
+     tidyGDP &lt;- content$BEAAPI$Results$Data %&gt;%
+          select(TimePeriod, GeoName, Code, DataValue) %&gt;%
+          rename(year = TimePeriod,
+                 state = GeoName,
+                 unit = Code,
+                 value = DataValue) %&gt;%
+          mutate(year = as.integer(year),
+                 measure = &quot;Gross Domestic Product&quot;,
+                 unit = units,
+                 value = as.integer(value),
+                 sector = NA) %&gt;%
+          select(year, state, sector, measure, unit, value)
+     
+     states &lt;- c(state.name, &quot;District of Columbia&quot;, &quot;United States&quot;)
+     
+     tidyGDP &lt;- tidyGDP %&gt;%
+          filter(state %in% states) %&gt;%
+          arrange(year, state, sector)
+     
+     return(tidyGDP)
+}
+
+gdp.sic.naics &lt;- function(s = NULL){
+     gdp.data &lt;- gdp.download(component = &quot;GDP_SAS&quot;, 
+                              years = 1960:1996,
+                              states = s)
+     gdp.data &lt;- rbind(gdp.data,
+                  gdp.download(component = &quot;GDP_SAN&quot;, 
+                               years = 1997:2015,
+                               states = s))
+     return(gdp.data)
+}</code></pre>
+<p><br></p>
+<p>Get SIC and NAICS GDP data and combine the data sets together</p>
+<pre class="r"><code>gdp.data &lt;- gdp.sic.naics()</code></pre>
+<p><br> <br></p>
+</div>
+</div>
+<div id="merging-data-sets-and-calculating-absolute-and-relative-performance-measures" class="section level2">
+<h2>Merging Data Sets and Calculating Absolute and Relative Performance Measures</h2>
+<p>We now have six data sets with:</p>
+<ul>
+<li>Consumption Data</li>
+<li>Emissions Data</li>
+<li>Expenditures Data</li>
+<li>Energy Production Data</li>
+<li>Population Data</li>
+<li>GDP Data</li>
+</ul>
+<p>We want to merge these six data sets into one and calculate for each state three measures:</p>
+<ul>
+<li>Conversion Efficiency: Current dollars GDP per millions of consumed Btu</li>
+<li>Production Efficiency: Consumed Btu per current dollars spent on energy</li>
+<li>Externality Efficiency: Millions of consumed Btu per metric ton of CO2 emitted</li>
+<li>Production to Consumption: Produced Btu per consumed Btu</li>
+<li>Fraction Renewable: Renewably produced Btu per total produced Btu</li>
+</ul>
+<p>What we are primarily interested in is Maine’s <em>relative</em> performance compared to other states, regions, divisions, and the country as a whole. Thus, in addition to calculating the above metrics for each state, we will also want to calculate them for each region, division, and the entire country so that we can then get relative measures to compare Maine to. In order to accomplish this we will add the columns “region” and “division” to the energy consumption data set before merging the data sets together.</p>
+<p><br></p>
+<p>Adding <strong>region</strong> and <strong>division</strong> columns to data sets:</p>
+<pre class="r"><code># Create function for changing state abbreviations to full names
+name.changer &lt;- function(abb){
+     
+     statenames &lt;- c(tolower(state.name), &quot;district of columbia&quot;)
+     stateabbs &lt;- c(state.abb, &quot;DC&quot;)
+     
+     name &lt;- statenames[stateabbs == abb]
+     return(name)
+}
+
+# Create function for changing state abbreviations to full names for 
+# an entire data set
+name.changer2 &lt;- function(dataset){
+     require(dplyr)
+     
+     dataset &lt;- dataset %&gt;%
+          mutate(state = as.character(lapply(state, name.changer)))
+     
+     return(dataset)
+}
+
+# Update data sets
+consumption.data &lt;- name.changer2(consumption.data)
+emissions.data &lt;- name.changer2(emissions.data)
+expenditures.data &lt;- name.changer2(expenditures.data)
+production.data &lt;- name.changer2(production.data)
+population.data &lt;- name.changer2(population.data)
+gdp.data &lt;- gdp.data %&gt;% mutate(state = tolower(state))
+
+# Create function for determining division
+find.div &lt;- function(state){
+     
+     divnames &lt;- c(tolower(as.character(state.division)), 
+                   &quot;south atlantic&quot;)
+     statenames &lt;- c(tolower(state.name), 
+                     &quot;district of columbia&quot;)
+     
+     division &lt;- divnames[statenames == state]
+     return(division)
+}
+
+# Create function for determining region
+find.reg &lt;- function(div){
+     
+     regnames &lt;- c(tolower(as.character(state.region)), 
+                   &quot;south&quot;)
+     divnames &lt;- c(tolower(state.division), 
+                     &quot;south atlantic&quot;)
+     
+     region &lt;- unique(regnames[divnames == div])
+     return(region)
+}
+
+# Create function for setting regions and divisions in data set
+regdiv.setter&lt;- function(dataset){
+     dataset &lt;- dataset %&gt;%
+          mutate(division = as.character(lapply(state, find.div)),
+                 region = as.character(lapply(division, find.reg))) %&gt;%
+          select(year, state, region, division, sector, measure, unit, value)
+     
+}
+
+# Update data sets
+
+consumption.data &lt;- regdiv.setter(consumption.data)
+emissions.data &lt;- regdiv.setter(emissions.data)
+expenditures.data &lt;- regdiv.setter(expenditures.data)
+production.data &lt;- regdiv.setter(production.data)
+population.data &lt;- regdiv.setter(population.data)
+gdp.data &lt;- regdiv.setter(gdp.data)
+
+# Now we will rowbind the datasets into one long data set
+MasterTidy &lt;- rbind(consumption.data,
+                    emissions.data,
+                    expenditures.data,
+                    production.data,
+                    population.data,
+                    gdp.data)</code></pre>
+<p><br></p>
+<p>The MasterTidy dataset we created above is perfect for most applications in R, but not ideal for working in Excel. Since the plan is to eventually use this data in an excel dashboard, we will create a new wider dataset with columns for each different measure and within each column will be the values that used to be in the column “value”.</p>
+</div>
 
 
 
