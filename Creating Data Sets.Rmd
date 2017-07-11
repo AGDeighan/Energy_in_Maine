@@ -349,7 +349,7 @@ state.emission.compiler <- function(states) {
 <br>
 
  Download emissions data
-```{r emissDownload}
+```{r emissDownload, results="hide"}
 states <- c(state.abb, "DC")
 
 emission.data <- state.emission.compiler(states = states)
@@ -430,7 +430,7 @@ expenditures.download <- function(state, sector) {
           rawToChar() %>%
           fromJSON()
      
-     print(str(this.content))
+     #print(str(this.content))
   
      # Convert to data frame
      consumption <- as.data.frame(this.content$series$data) %>%
@@ -524,10 +524,10 @@ state.expenditures.compiler <- function(states) {
 <br>
 
  Download expenditures data
-```{r expendDownload}
+```{r expendDownload, results="hide"}
 states <- c(state.abb, "DC")
 
-expenditure.data <- state.expenditures.compiler(states = states)
+expenditures.data <- state.expenditures.compiler(states = states)
 ```
 
 <br>
@@ -678,7 +678,7 @@ state.production.compiler <- function(states) {
 <br>
 
  Download production data
-```{r prodDownload}
+```{r prodDownload, results="hide"}
 states <- c(state.abb, "DC")
 
 production.data <- state.production.compiler(states = states)
@@ -787,7 +787,7 @@ state.population.compiler <- function(states) {
 <br>
 
  Download population data
-```{r popDownload}
+```{r popDownload, results="hide"}
 states <- c(state.abb, "DC")
 
 population.data <- state.population.compiler(states = states)
@@ -804,7 +804,7 @@ population.data <- state.population.compiler(states = states)
 
  Create functions for fetching GDP data
 ```{r gdpFunctions}
-gdp.download <- function(component, years){
+gdp.download <- function(component, years, states = NULL){
      # Function takes two arguments, component name (string) and a vector of
      # years (integer). The function returns a data frame with total industry
      # GDP data for those years, for all states.
@@ -827,8 +827,9 @@ gdp.download <- function(component, years){
      ds <- "RegionalProduct"
      # Specify which GDP compenent we're interested in (NAICS or SIC)
      comp <- component
-     # Request GDP data for all states
-     area <- "STATE"
+     # Request GDP data for all states unless specific states are specified
+     if(is.null(states)) {area <- "STATE"}
+     else {area <- paste(states, collapse = ",")}
      # The industry code "1" indicates that we want the total GDP data for
      # all industries
      inds <- 1
@@ -885,21 +886,50 @@ gdp.download <- function(component, years){
      
      return(tidyGDP)
 }
+
+gdp.sic.naics <- function(s = NULL){
+     gdp.data <- gdp.download(component = "GDP_SAS", 
+                              years = 1960:1996,
+                              states = s)
+     gdp.data <- rbind(gdp.data,
+                  gdp.download(component = "GDP_SAN", 
+                               years = 1997:2015,
+                               states = s))
+     return(gdp.data)
+}
 ```
 
 <br>
 
  Get SIC and NAICS GDP data and combine the data sets together
-```{r getGDP}
-gdp.data <- gdp.download(component = "GDP_SAS", years = 1960:1996)
-gdp.data <- rbind(gdp.data,
-                  gdp.download(component = "GDP_SAN", years = 1997:2015))
+```{r getGDP, results="hide"}
+gdp.data <- gdp.sic.naics()
 ```
 
 
 <br>
 <br>
 
+## Merging Data Sets and Calculating Absolute and Relative Performance Measures
+
+ We now have six data sets with:
+
+- Consumption Data
+- Emissions Data
+- Expenditures Data
+- Energy Production Data
+- Population Data
+- GDP Data
+
+ We want to merge these six data sets into one and calculate for each state three measures:
+ 
+- Conversion Efficiency: Current dollars GDP per millions of consumed Btu
+- Production Efficiency: Consumed Btu per current dollars spent on energy
+- Externality Efficiency: Millions of consumed Btu per metric ton of CO2 emitted
+- Production to Consumption: Produced Btu per consumed Btu
+- Fraction Renewable: Renewably produced Btu per total produced Btu
+
+ What we are primarily interested in is Maine's *relative* performance compared to other states, regions, divisions, and the country as a whole. Thus, in addition to calculating the above metrics for each state, we will also want to calculate them for each region, division, and the entire country so that we can then get relative measures to compare Maine to. In order to accomplish this we will add the columns "region" and "division" to the energy consumption data set before merging the data sets together.
 
 
 
