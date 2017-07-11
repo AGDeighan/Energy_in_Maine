@@ -532,6 +532,270 @@ expenditure.data <- state.expenditures.compiler(states = states)
 
 <br>
 
+### Loading Energy Production Data
+
+ For energy production data we are interested in total state energy production and total state renewable energy (excluding ethanol) production. Thus for each state we will be making two API requests:
+
+- Total Energy Production
+- Renewable (excluding ethanol) Energy Production
+
+<br>
+
+  Create functions for downloading consumption data
+```{r prodFunctions, message=FALSE}
+# Function for downloading data files
+production.download <- function(state, segment) {
+     # Function takes two letter upper-case state abbreviation and name of
+     # desired segment ('total production' or 'renewable') as arguments and
+     # returns production data set for that state and segment
+     
+     require(httr)
+     require(jsonlite)
+     require(dplyr)
+     
+     # Select proper segment code
+     if(segment == 'total production') {
+          sc <- ".TEPRB."
+          meas <- "Total Energy Production"
+     }
+     else if(segment == "renewable") {
+          sc <- ".ROPRB."
+          meas <- "Renewable Energy Production"
+     }
+     
+     # Create request key  
+     suppressWarnings(ek <- readLines("EIAkey.txt"))
+     key <- paste("api_key=", ek, sep = ""); rm(ek)
+     uribase <- "http://api.eia.gov/"
+  
+     meth <- "series/?"
+     sabb <- state
+     srID <- paste("&series_id=", 
+                   "SEDS",
+                   sc,
+                   sabb,
+                   ".A", 
+                   sep = "")
+  
+     call <- paste(uribase,
+                   meth,
+                   key,
+                   srID,
+                   sep = "")
+  
+     # Get raw result to character format 
+     raw.result <- GET(url = call)
+  
+     print(raw.result$status_code)
+     
+     this.content <- raw.result$content %>%
+          rawToChar() %>%
+          fromJSON()
+     
+     #print(str(this.content))
+  
+     # Convert to data frame
+     consumption <- as.data.frame(this.content$series$data) %>%
+          rename(year = X1, value = X2) %>%
+          mutate(state = sabb,
+                 sector = NA,
+                 year = as.integer(as.character(year)),
+                 measure = meas,
+                 unit = "Billions of Btus",
+                 value = as.numeric(as.character(value))) %>%
+          select(year, state, sector, measure, unit, value) %>%
+          filter(year >= 1960) 
+  
+     return(consumption)
+  
+     rm(sc, key, uribase,
+        meth, sabb, srID,
+        call, raw.result, this.content,
+        consumption)
+}
+
+################################################################################
+
+# Function for compiling individual state data
+segment.production.getter <- function(state) {
+     # Function takes uppercase two-letter state abbreviation and returns data
+     # frame with both total and renewable only energy production within that
+     # state
+  
+     # Create vector of segments to loop through
+     sectors <- c("total production",
+                  "renewable")
+  
+     # Initiate data frame
+     consumption <- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               measure = NULL,
+                               unit = NULL,
+                               value = NULL)
+  
+     # Loop through segments, rowbinding data frames
+     for(s in sectors){
+          # Call data downloading function
+          consumption <- rbind(consumption,
+                               production.download(state = state, 
+                                                   segment = s))
+     }
+  
+     return(consumption)
+  
+     rm(sectors, consumption, s)
+}
+
+################################################################################
+
+# Function for compiling data sets for all states
+state.production.compiler <- function(states) {
+     # Takes a vector of uppercase two-letter state abbreviations and returns a
+     # data frame with energy production data for each state in that list.
+     
+     # Initialize data frame
+     consumption <- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               measure = NULL,
+                               unit = NULL,
+                               value = NULL)
+     
+     # Loop over list of states
+     for(s in states){
+          # Call state data compiler function
+          consumption <- rbind(consumption,
+                               segment.production.getter(state = s))
+     }
+  
+     return(consumption)
+  
+     rm(consumption, s)
+}
+```
+
+<br>
+
+ Download production data
+```{r prodDownload}
+states <- c(state.abb, "DC")
+
+production.data <- state.production.compiler(states = states)
+```
+
+<br>
+<br>
+
+### Loading Population Data
+ 
+ In addition to information on energy use, production, cost, and emissions we also want more demographic/economic data on state population and gross domestic product (GDP). State population figures we can request directly from the EIA via their API. The EIA also has GDP data for states, but not as far back as th 1960s, so we will have to go elsewhere to get this information (explained in next [section](#loading-gdp-data)). For population data we only need to make one API request per state:
+
+- Total State Population
+
+<br>
+
+ Create functions for retrieving population data:
+
+```{r popFunctions, message=FALSE}
+# Function for downloading data files
+population.download <- function(state) {
+     # Function takes two letter upper-case state abbreviation as an argument 
+     # and returns population data set for that state.
+     
+     require(httr)
+     require(jsonlite)
+     require(dplyr)
+     
+     # Create request key  
+     suppressWarnings(ek <- readLines("EIAkey.txt"))
+     key <- paste("api_key=", ek, sep = ""); rm(ek)
+     uribase <- "http://api.eia.gov/"
+  
+     meth <- "series/?"
+     sabb <- state
+     srID <- paste("&series_id=SEDS.TPOPP.",
+                   sabb,
+                   ".A", 
+                   sep = "")
+  
+     call <- paste(uribase,
+                   meth,
+                   key,
+                   srID,
+                   sep = "")
+  
+     # Get raw result to character format 
+     raw.result <- GET(url = call)
+  
+     print(raw.result$status_code)
+     
+     this.content <- raw.result$content %>%
+          rawToChar() %>%
+          fromJSON()
+     
+     #print(str(this.content))
+  
+     # Convert to data frame
+     consumption <- as.data.frame(this.content$series$data) %>%
+          rename(year = X1, value = X2) %>%
+          mutate(state = sabb,
+                 sector = NA,
+                 year = as.integer(as.character(year)),
+                 measure = "Population",
+                 unit = "Thousands of Persons",
+                 value = as.numeric(as.character(value))) %>%
+          select(year, state, sector, measure, unit, value) %>%
+          filter(year >= 1960) 
+  
+     return(consumption)
+  
+     rm(sc, key, uribase,
+        meth, sabb, srID,
+        call, raw.result, this.content,
+        consumption)
+}
+
+################################################################################
+
+# Function for compiling data sets for all states
+state.population.compiler <- function(states) {
+     # Takes a vector of uppercase two-letter state abbreviations and returns a
+     # data frame with population data for each state in that list.
+     
+     # Initialize data frame
+     consumption <- data.frame(year = NULL,
+                               state = NULL, 
+                               sector = NULL,
+                               measure = NULL,
+                               unit = NULL,
+                               value = NULL)
+     
+     # Loop over list of states
+     for(s in states){
+          # Call state data compiler function
+          consumption <- rbind(consumption,
+                               population.download(state = s))
+     }
+  
+     return(consumption)
+  
+     rm(consumption, s)
+}
+```
+
+<br>
+
+ Download population data
+```{r popDownload}
+states <- c(state.abb, "DC")
+
+population.data <- state.population.compiler(states = states)
+```
+
+<br>
+<br>
+
 ### Loading GDP Data
 
  The GDP data were aquired from the Bureau of Economic Analysis (BEA). Before 1997 BEA used the Standard Industrial Classification (SIC) system for classifying industries when calculating GDP. In 1997, BEA switched to using the North American Industry Classification System (NAICS). For 1997 BEA reports GDP estimates calculate using both the NAICS and SIC system. The fact the the 1997 estimates differ slightly between these two systems should be kept in mind when are comparing pre and post 1997 GDP data. That being said, we will use GDP estimates calculated using the SIC system for years before 1997 and NAICS for years from 1997 onwards. We will use current dollar GDP values rather than GDP values adjusted for inflation. Since our planned analysis primarily involves Maine's *relative* performance to the rest of the country, adjusting GDP values for inflation would have no effect (since the conversion factor would cancel out).
@@ -633,6 +897,8 @@ gdp.data <- rbind(gdp.data,
 ```
 
 
+<br>
+<br>
 
 
 
