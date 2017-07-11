@@ -188,14 +188,14 @@ state.consumption.compiler <- function(states) {
 <br>
 
  Download consumption data
-```{r consmpDownload, results="hide"}
+```{r consmpDownload, results="hide", cache=TRUE}
 states <- c(state.abb, "DC")
 
 consumption.data <- state.consumption.compiler(states = states)
 ```
 
-<br>
 
+<br>
 <br>
 
 ### Loading Emissions Data
@@ -349,10 +349,10 @@ state.emission.compiler <- function(states) {
 <br>
 
  Download emissions data
-```{r emissDownload, results="hide"}
+```{r emissDownload, results="hide", cache=TRUE}
 states <- c(state.abb, "DC")
 
-emission.data <- state.emission.compiler(states = states)
+emissions.data <- state.emission.compiler(states = states)
 ```
 
 <br>
@@ -524,12 +524,13 @@ state.expenditures.compiler <- function(states) {
 <br>
 
  Download expenditures data
-```{r expendDownload, results="hide"}
+```{r expendDownload, results="hide", cache=TRUE}
 states <- c(state.abb, "DC")
 
 expenditures.data <- state.expenditures.compiler(states = states)
 ```
 
+<br>
 <br>
 
 ### Loading Energy Production Data
@@ -678,7 +679,7 @@ state.production.compiler <- function(states) {
 <br>
 
  Download production data
-```{r prodDownload, results="hide"}
+```{r prodDownload, results="hide", cache=TRUE}
 states <- c(state.abb, "DC")
 
 production.data <- state.production.compiler(states = states)
@@ -787,7 +788,7 @@ state.population.compiler <- function(states) {
 <br>
 
  Download population data
-```{r popDownload, results="hide"}
+```{r popDownload, results="hide", cache=TRUE}
 states <- c(state.abb, "DC")
 
 population.data <- state.population.compiler(states = states)
@@ -902,7 +903,7 @@ gdp.sic.naics <- function(s = NULL){
 <br>
 
  Get SIC and NAICS GDP data and combine the data sets together
-```{r getGDP, results="hide"}
+```{r getGDP, results="hide", , cache=TRUE}
 gdp.data <- gdp.sic.naics()
 ```
 
@@ -930,6 +931,93 @@ gdp.data <- gdp.sic.naics()
 - Fraction Renewable: Renewably produced Btu per total produced Btu
 
  What we are primarily interested in is Maine's *relative* performance compared to other states, regions, divisions, and the country as a whole. Thus, in addition to calculating the above metrics for each state, we will also want to calculate them for each region, division, and the entire country so that we can then get relative measures to compare Maine to. In order to accomplish this we will add the columns "region" and "division" to the energy consumption data set before merging the data sets together.
+
+<br>
+
+ Adding **region** and **division** columns to consumption data set: 
+```{r addDivReg, results="hide", cache=TRUE}
+# Create function for changing state abbreviations to full names
+name.changer <- function(abb){
+     
+     statenames <- c(tolower(state.name), "district of columbia")
+     stateabbs <- c(state.abb, "DC")
+     
+     name <- statenames[stateabbs == abb]
+     return(name)
+}
+
+# Create function for determining division
+find.div <- function(state){
+     
+     divnames <- c(tolower(as.character(state.division)), 
+                   "south atlantic")
+     statenames <- c(tolower(state.name), 
+                     "district of columbia")
+     
+     division <- divnames[statenames == state]
+     return(division)
+}
+
+# Create function for determining region
+find.reg <- function(div){
+     
+     regnames <- c(tolower(as.character(state.region)), 
+                   "south")
+     divnames <- c(tolower(state.division), 
+                     "south atlantic")
+     
+     region <- unique(regnames[divnames == div])
+     return(region)
+}
+
+
+# Update consumption data set
+
+consumption.data <- consumption.data %>%
+     mutate(state = as.character(lapply(state, name.changer)),
+            division = as.character(lapply(state, find.div)),
+            region = as.character(lapply(division, find.reg))) %>%
+     select(year, state, region, division, sector, measure, unit, value)
+
+```
+
+<br>
+
+ Now that we have added region and division values to the consumption data set we will merge all the data sets together:
+```{r mergeDatasets, results="hide", cache=TRUE}
+# First we will make sure all the data sets have full state names for the
+# "state" variable before merging
+name.changer2 <- function(dataset){
+     require(dplyr)
+     
+     dataset <- dataset %>%
+          mutate(state = as.character(lapply(state, name.changer)))
+     
+     return(dataset)
+}
+
+emissions.data <- name.changer2(emissions.data)
+expenditures.data <- name.changer2(expenditures.data)
+production.data <- name.changer2(production.data)
+population.data <- name.changer2(population.data)
+
+# Now we will merge the data sets
+merged <- consumption.data %>% 
+     merge(emissions.data,
+           by("year", "state", "sector"), all.x = TRUE) %>%
+     merge(expenditures.data,
+           by("year", "state", "sector"), all.x = TRUE) %>%
+     merge(production.data,
+           by("year", "state"), all.x = TRUE) %>%
+     merge(population.data,
+           by("year", "state"), all.x = TRUE) %>%
+     merge(gdp.data,
+           by("year", "state"), all.x = TRUE)
+
+
+```
+ 
+
 
 
 
