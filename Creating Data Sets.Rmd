@@ -3,6 +3,7 @@ title: "Creating Data Sets"
 author: "Andrew Deighan"
 date: "July 6, 2017"
 output: html_document
+keep_md: true
 ---
 
   Load necessary libraries
@@ -931,6 +932,8 @@ gdp.data <- gdp.sic.naics()
 - Fraction Renewable: Renewably produced Btu per total produced Btu
 
  What we are primarily interested in is Maine's *relative* performance compared to other states, regions, divisions, and the country as a whole. Thus, in addition to calculating the above metrics for each state, we will also want to calculate them for each region, division, and the entire country so that we can then get relative measures to compare Maine to. In order to accomplish this we will add the columns "region" and "division" to the energy consumption data set before merging the data sets together.
+ 
+### Combining/Merging Data Sets
 
 <br>
 
@@ -1006,19 +1009,332 @@ expenditures.data <- regdiv.setter(expenditures.data)
 production.data <- regdiv.setter(production.data)
 population.data <- regdiv.setter(population.data)
 gdp.data <- regdiv.setter(gdp.data)
+```
 
+<br>
+
+ Now let's take a quick look at our data sets
+```{r}
+tail(tbl_df(consumption.data))
+tail(tbl_df(emissions.data))
+tail(tbl_df(expenditures.data))
+tail(tbl_df(production.data))
+tail(tbl_df(population.data))
+head(tbl_df(gdp.data))
+```
+
+ <br>
+ 
+ Note that while some of our data sets go back as far as 1960, not all do. The emissions data set only goes back to 1980. Before combining all these data sets into one data set we will first trim off all pre-1980 observations.
+
+```{r longMaster}
 # Now we will rowbind the datasets into one long data set
-MasterTidy <- rbind(consumption.data,
-                    emissions.data,
-                    expenditures.data,
-                    production.data,
-                    population.data,
-                    gdp.data)
+MasterTidy <- rbind(filter(consumption.data, year >= 1980),
+                    filter(emissions.data, year >= 1980),
+                    filter(expenditures.data, year >= 1980),
+                    filter(production.data, year >= 1980),
+                    filter(population.data, year >= 1980),
+                    filter(gdp.data, year >= 1980))
+
+head(MasterTidy)
+tail(MasterTidy)
+str(MasterTidy)
 ```
  
 <br>
 
  The MasterTidy dataset we created above is perfect for most applications in R, but not ideal for working in Excel. Since the plan is to eventually use this data in an excel dashboard, we will create a new wider dataset with columns for each different measure and within each column will be the values that used to be in the column "value".
+ 
+```{r wideDataSet, cache=TRUE}
+library(reshape2)
+
+wide.consumption <- dcast(filter(consumption.data, year >= 1980), 
+                          year + state + region + division + sector 
+                          ~ measure, 
+                          value.var = "value")
+wide.emissions <- dcast(filter(emissions.data, year >= 1980),
+                        year + state + region + division + sector
+                        ~ measure,
+                        value.var = "value")
+wide.expenditures <- dcast(filter(expenditures.data, year >= 1980),
+                           year + state + region + division + sector
+                           ~ measure,
+                           value.var = "value")
+wide.production <- dcast(filter(production.data, year >= 1980),
+                         year + state + region + division + sector
+                         ~ measure,
+                         value.var = "value")
+wide.population <- dcast(filter(population.data, year >= 1980),
+                         year + state + region + division + sector
+                         ~ measure,
+                         value.var = "value")
+wide.gdp <- dcast(filter(gdp.data, year >= 1980),
+                  year + state + region + division + sector
+                  ~ measure,
+                  value.var = "value")
+
+merged <- wide.consumption %>%
+     merge(wide.emissions,
+           by = c("year", "state", "region", "division", "sector"),
+           all.x = TRUE) %>%
+     merge(wide.expenditures,
+           by = c("year", "state", "region", "division", "sector"),
+           all.x = TRUE) %>%
+     merge(select(wide.production, -sector),
+           by = c("year", "state", "region", "division")) %>%
+     merge(select(wide.population, -sector),
+           by = c("year", "state", "region", "division")) %>%
+     merge(select(wide.gdp, -sector),
+           by = c("year", "state", "region", "division"))
+
+head(tbl_df(merged))
+str(merged)
+```
+
+<br>
+
+ Now we will calculate the performance measures using the "merged" (wide) data set. It is important to keep in mind that when we merged the data sets we lost the column that described what the units were.
+ 
+<br>
+<br>
+
+### Calculating Performance Measures
+
+ Now we will calculate our performance measures, which are:
+ 
+- Conversion Efficiency: Current dollars GDP per millions of consumed Btu
+- Production Efficiency: Consumed Btu per current dollars spent on energy
+- Externality Efficiency: Millions of consumed Btu per metric ton of CO2 emitted
+- Production to Consumption: Produced Btu per consumed Btu
+- Fraction Renewable: Renewably produced Btu per total produced Btu
+
+ When we merged the data sets to create the wide data set we lost the columns that said what the units of each measurement were. We will use the following units for each measurement type:
+ 
+- Energy Consumption: millions of Btu
+- CO2 Emissions: metric tons of CO2
+- Energy Expenditures: millions of current dollars
+- Total Energy Production: millions of Btu
+- Renewable Energy Production: millions of Btu
+- Gross Domestic Product: millions of current dollars
+     - Pre-1997 GDP Values: use SIC system
+     - 1997-2015 GDP Values: sse NAICS
+- Population: thousands of persons
+
+ First we will convert all measures into the above appropriate units if they are not already. We will also add rows for each region, division, and the country as a whole.
+```{r setunitsCorrect}
+WideData <- merged %>%
+     mutate(`Energy Consumption` = `Energy Consumption`*1000,
+            `CO2 Emissions` = `CO2 Emissions`*1000000,
+            `Total Energy Production` = `Total Energy Production`*1000,
+            `Renewable Energy Production` = 
+                 `Renewable Energy Production`*1000)
+
+Country <- WideData %>%
+     group_by(year, sector) %>%
+     summarise(state = "united states",
+               region = NA,
+               division = NA,
+               `Energy Consumption` = sum(`Energy Consumption`),
+               `CO2 Emissions` = sum(`CO2 Emissions`),
+               `Energy Expenditures` = sum(`Energy Expenditures`),
+               `Renewable Energy Production` = 
+                    sum(`Renewable Energy Production`),
+               `Total Energy Production` = sum(`Total Energy Production`),
+               Population = sum(Population),
+               `Gross Domestic Product` = sum(`Gross Domestic Product`)) %>%
+     ungroup()
+
+Regions <- WideData %>%
+     group_by(year, sector, region) %>%
+     summarise(division = NA,
+               `Energy Consumption` = sum(`Energy Consumption`),
+               `CO2 Emissions` = sum(`CO2 Emissions`),
+               `Energy Expenditures` = sum(`Energy Expenditures`),
+               `Renewable Energy Production` = 
+                    sum(`Renewable Energy Production`),
+               `Total Energy Production` = sum(`Total Energy Production`),
+               Population = sum(Population),
+               `Gross Domestic Product` = sum(`Gross Domestic Product`)) %>%
+     ungroup() %>%
+     mutate(state = region) %>%
+     select(year, state, region, division, sector, 
+            `Energy Consumption`, `CO2 Emissions`, 
+            `Energy Expenditures`, `Renewable Energy Production`,
+            `Total Energy Production`, Population,
+            `Gross Domestic Product`)
+
+Divisions <- WideData %>%
+     group_by(year, sector, region, division) %>%
+     summarise(`Energy Consumption` = sum(`Energy Consumption`),
+               `CO2 Emissions` = sum(`CO2 Emissions`),
+               `Energy Expenditures` = sum(`Energy Expenditures`),
+               `Renewable Energy Production` = 
+                    sum(`Renewable Energy Production`),
+               `Total Energy Production` = sum(`Total Energy Production`),
+               Population = sum(Population),
+               `Gross Domestic Product` = sum(`Gross Domestic Product`)) %>%
+     ungroup() %>%
+     mutate(state = division) %>%
+     select(year, state, region, division, sector, 
+            `Energy Consumption`, `CO2 Emissions`, 
+            `Energy Expenditures`, `Renewable Energy Production`,
+            `Total Energy Production`, Population,
+            `Gross Domestic Product`)
+
+WideData <- rbind(WideData, Divisions, Regions, Country)
+
+head(tbl_df(WideData))
+tail(tbl_df(WideData))
+```
+
+<br>
+
+ Now that the variables are in the proper units we will calculate the performance measures:
+```{r performMeasures}
+# Before doing anything else, let's remove all the white spaces from column
+# names and make all letters lowercase
+
+names(WideData) <- tolower(gsub(" ", "\\.", names(WideData)))
+
+WideData <- WideData %>%
+     mutate(conversion.efficiency =
+                 gross.domestic.product/energy.consumption,
+            production.efficiency =
+                 energy.consumption/energy.expenditures,
+            externality.efficiency = 
+                 energy.consumption/co2.emissions,
+            prod.to.consumption =
+                 total.energy.production/energy.consumption,
+            fraction.renewable =
+                 renewable.energy.production/total.energy.production,
+            per.capita.consumption =
+                 energy.consumption/population * 1000)
+```
+
+<br>
+
+ Now that we have the performance measures for each state we would like to look at Maine's performance measures compared to other individual states and the country as a whole. We will create a new data frame for this (which will then be used in Excel to create a dashboard).
+ 
+```{r maineRelative, cache=TRUE}
+# Initialize data frame
+MaineRelative <- data.frame(year = NULL,
+                            compared.area = NULL,
+                            sector = NULL,
+                            conversion.efficiency = NULL,
+                            production.efficiency = NULL,
+                            externality.efficiency = NULL,
+                            prod.to.consumption = NULL,
+                            fraction.renewable = NULL,
+                            per.capita.consumption = NULL)
+
+# Create data set without maine
+notMaine <- WideData %>%
+     filter(state != "maine")
+
+# Create a data set with only maine
+onlyMaine <- WideData %>%
+     filter(state == "maine")
+
+# Create function for getting comparative measures for Maine compared to a 
+# specific year, sector, and state (or area). 
+comp.calc <- function(yr, area, sect){
+     require(dplyr)
+     
+     maindata <- onlyMaine %>%
+          filter(year == yr, sector == sect)
+     compdata <- notMaine %>%
+          filter(year == yr, state == area, sector == sect)
+     
+     conv <- maindata$conv/compdata$conv
+     prod <- maindata$produ/compdata$produ
+     extr <- maindata$extern/compdata$extern
+     ptoc <- maindata$prod.t/compdata$prod.t
+     rfrc <- maindata$frac/compdata$frac
+     pcap <- maindata$per/compdata$per
+     
+     dataframe <- data.frame(year = yr,
+                             compared.area = area,
+                             sector = sect,
+                             conversion.efficiency = conv,
+                             production.efficiency = prod,
+                             externality.efficiency = extr,
+                             prod.to.consumption = ptoc,
+                             fraction.renewable = rfrc,
+                             per.capita.consumption = pcap)
+     
+     return(dataframe)
+}
+
+# Perform above function for all years
+allyear.calc <- function(area, sect){
+     dataframe <- data.frame(year = NULL,
+                             compared.area = NULL,
+                             sector = NULL,
+                             conversion.efficiency = NULL,
+                             production.efficiency = NULL,
+                             externality.efficiency = NULL,
+                             prod.to.consumption = NULL,
+                             fraction.renewable = NULL,
+                             per.capita.consumption = NULL)
+     
+     for(year in unique(onlyMaine$year)){
+        dataframe <- rbind(dataframe,
+                           comp.calc(yr = year,
+                                     area = area,
+                                     sect = sect))  
+     }
+     
+     return(dataframe)
+}
+
+# Perform above function for all sectors
+allsect.calc <- function(area){
+     dataframe <- data.frame(year = NULL,
+                             compared.area = NULL,
+                             sector = NULL,
+                             conversion.efficiency = NULL,
+                             production.efficiency = NULL,
+                             externality.efficiency = NULL,
+                             prod.to.consumption = NULL,
+                             fraction.renewable = NULL,
+                             per.capita.consumption = NULL)
+     
+     for(s in unique(onlyMaine$sector)){
+          dataframe <- rbind(dataframe,
+                             allyear.calc(area = area,
+                                          sect = s))
+     }
+     
+     return(dataframe)
+}
+
+# Perform above function for all states, regions, divisions, and country
+all.calc <- function(){
+    dataframe <- data.frame(year = NULL,
+                             compared.area = NULL,
+                             sector = NULL,
+                             conversion.efficiency = NULL,
+                             production.efficiency = NULL,
+                             externality.efficiency = NULL,
+                             prod.to.consumption = NULL,
+                             fraction.renewable = NULL,
+                             per.capita.consumption = NULL)
+     
+     for(a in unique(notMaine$state)){
+          dataframe <- rbind(dataframe,
+                             allsect.calc(area = a))
+     } 
+    
+    return(dataframe)
+}
+
+h <- all.calc()
+
+write.csv(h, "data/Relative Performance of Maine.csv", row.names = FALSE)
+
+```
+
+
 
 
 

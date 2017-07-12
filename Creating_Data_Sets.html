@@ -984,6 +984,8 @@ gdp.sic.naics &lt;- function(s = NULL){
 <li>Fraction Renewable: Renewably produced Btu per total produced Btu</li>
 </ul>
 <p>What we are primarily interested in is Maine’s <em>relative</em> performance compared to other states, regions, divisions, and the country as a whole. Thus, in addition to calculating the above metrics for each state, we will also want to calculate them for each region, division, and the entire country so that we can then get relative measures to compare Maine to. In order to accomplish this we will add the columns “region” and “division” to the energy consumption data set before merging the data sets together.</p>
+<div id="combiningmerging-data-sets" class="section level3">
+<h3>Combining/Merging Data Sets</h3>
 <p><br></p>
 <p>Adding <strong>region</strong> and <strong>division</strong> columns to data sets:</p>
 <pre class="r"><code># Create function for changing state abbreviations to full names
@@ -1055,17 +1057,456 @@ emissions.data &lt;- regdiv.setter(emissions.data)
 expenditures.data &lt;- regdiv.setter(expenditures.data)
 production.data &lt;- regdiv.setter(production.data)
 population.data &lt;- regdiv.setter(population.data)
-gdp.data &lt;- regdiv.setter(gdp.data)
+gdp.data &lt;- regdiv.setter(gdp.data)</code></pre>
+<p><br></p>
+<p>Now let’s take a quick look at our data sets</p>
+<pre class="r"><code>tail(tbl_df(consumption.data))</code></pre>
+<pre><code>## # A tibble: 6 × 8
+##    year                state region       division         sector
+##   &lt;int&gt;                &lt;chr&gt;  &lt;chr&gt;          &lt;chr&gt;          &lt;chr&gt;
+## 1  1965 district of columbia  south south atlantic transportation
+## 2  1964 district of columbia  south south atlantic transportation
+## 3  1963 district of columbia  south south atlantic transportation
+## 4  1962 district of columbia  south south atlantic transportation
+## 5  1961 district of columbia  south south atlantic transportation
+## 6  1960 district of columbia  south south atlantic transportation
+## # ... with 3 more variables: measure &lt;chr&gt;, unit &lt;chr&gt;, value &lt;dbl&gt;</code></pre>
+<pre class="r"><code>tail(tbl_df(emissions.data))</code></pre>
+<pre><code>## # A tibble: 6 × 8
+##    year                state region       division         sector
+##   &lt;int&gt;                &lt;chr&gt;  &lt;chr&gt;          &lt;chr&gt;          &lt;chr&gt;
+## 1  1985 district of columbia  south south atlantic transportation
+## 2  1984 district of columbia  south south atlantic transportation
+## 3  1983 district of columbia  south south atlantic transportation
+## 4  1982 district of columbia  south south atlantic transportation
+## 5  1981 district of columbia  south south atlantic transportation
+## 6  1980 district of columbia  south south atlantic transportation
+## # ... with 3 more variables: measure &lt;chr&gt;, unit &lt;chr&gt;, value &lt;dbl&gt;</code></pre>
+<pre class="r"><code>tail(tbl_df(expenditures.data))</code></pre>
+<pre><code>## # A tibble: 6 × 8
+##    year                state region       division         sector
+##   &lt;int&gt;                &lt;chr&gt;  &lt;chr&gt;          &lt;chr&gt;          &lt;chr&gt;
+## 1  1975 district of columbia  south south atlantic transportation
+## 2  1974 district of columbia  south south atlantic transportation
+## 3  1973 district of columbia  south south atlantic transportation
+## 4  1972 district of columbia  south south atlantic transportation
+## 5  1971 district of columbia  south south atlantic transportation
+## 6  1970 district of columbia  south south atlantic transportation
+## # ... with 3 more variables: measure &lt;chr&gt;, unit &lt;chr&gt;, value &lt;dbl&gt;</code></pre>
+<pre class="r"><code>tail(tbl_df(production.data))</code></pre>
+<pre><code>## # A tibble: 6 × 8
+##    year                state region       division sector
+##   &lt;int&gt;                &lt;chr&gt;  &lt;chr&gt;          &lt;chr&gt;  &lt;lgl&gt;
+## 1  1965 district of columbia  south south atlantic     NA
+## 2  1964 district of columbia  south south atlantic     NA
+## 3  1963 district of columbia  south south atlantic     NA
+## 4  1962 district of columbia  south south atlantic     NA
+## 5  1961 district of columbia  south south atlantic     NA
+## 6  1960 district of columbia  south south atlantic     NA
+## # ... with 3 more variables: measure &lt;chr&gt;, unit &lt;chr&gt;, value &lt;dbl&gt;</code></pre>
+<pre class="r"><code>tail(tbl_df(population.data))</code></pre>
+<pre><code>## # A tibble: 6 × 8
+##    year                state region       division sector    measure
+##   &lt;int&gt;                &lt;chr&gt;  &lt;chr&gt;          &lt;chr&gt;  &lt;lgl&gt;      &lt;chr&gt;
+## 1  1965 district of columbia  south south atlantic     NA Population
+## 2  1964 district of columbia  south south atlantic     NA Population
+## 3  1963 district of columbia  south south atlantic     NA Population
+## 4  1962 district of columbia  south south atlantic     NA Population
+## 5  1961 district of columbia  south south atlantic     NA Population
+## 6  1960 district of columbia  south south atlantic     NA Population
+## # ... with 2 more variables: unit &lt;chr&gt;, value &lt;dbl&gt;</code></pre>
+<pre class="r"><code>head(tbl_df(gdp.data))</code></pre>
+<pre><code>## # A tibble: 6 × 8
+##    year      state region           division sector                measure
+##   &lt;int&gt;      &lt;chr&gt;  &lt;chr&gt;              &lt;chr&gt;  &lt;lgl&gt;                  &lt;chr&gt;
+## 1  1963    alabama  south east south central     NA Gross Domestic Product
+## 2  1963     alaska   west            pacific     NA Gross Domestic Product
+## 3  1963    arizona   west           mountain     NA Gross Domestic Product
+## 4  1963   arkansas  south west south central     NA Gross Domestic Product
+## 5  1963 california   west            pacific     NA Gross Domestic Product
+## 6  1963   colorado   west           mountain     NA Gross Domestic Product
+## # ... with 2 more variables: unit &lt;chr&gt;, value &lt;int&gt;</code></pre>
+<p><br></p>
+<p>Note that while some of our data sets go back as far as 1960, not all do. The emissions data set only goes back to 1980. Before combining all these data sets into one data set we will first trim off all pre-1980 observations.</p>
+<pre class="r"><code># Now we will rowbind the datasets into one long data set
+MasterTidy &lt;- rbind(filter(consumption.data, year &gt;= 1980),
+                    filter(emissions.data, year &gt;= 1980),
+                    filter(expenditures.data, year &gt;= 1980),
+                    filter(production.data, year &gt;= 1980),
+                    filter(population.data, year &gt;= 1980),
+                    filter(gdp.data, year &gt;= 1980))
 
-# Now we will rowbind the datasets into one long data set
-MasterTidy &lt;- rbind(consumption.data,
-                    emissions.data,
-                    expenditures.data,
-                    production.data,
-                    population.data,
-                    gdp.data)</code></pre>
+head(MasterTidy)</code></pre>
+<pre><code>##   year   state region           division sector            measure
+## 1 2015 alabama  south east south central    all Energy Consumption
+## 2 2014 alabama  south east south central    all Energy Consumption
+## 3 2013 alabama  south east south central    all Energy Consumption
+## 4 2012 alabama  south east south central    all Energy Consumption
+## 5 2011 alabama  south east south central    all Energy Consumption
+## 6 2010 alabama  south east south central    all Energy Consumption
+##               unit   value
+## 1 Billions of Btus 1909559
+## 2 Billions of Btus 1956390
+## 3 Billions of Btus 1919299
+## 4 Billions of Btus 1879577
+## 5 Billions of Btus 1905096
+## 6 Billions of Btus 1931458</code></pre>
+<pre class="r"><code>tail(MasterTidy)</code></pre>
+<pre><code>##       year         state        region           division sector
+## 52969 2015       vermont     northeast        new england   &lt;NA&gt;
+## 52970 2015      virginia         south     south atlantic   &lt;NA&gt;
+## 52971 2015    washington          west            pacific   &lt;NA&gt;
+## 52972 2015 west virginia         south     south atlantic   &lt;NA&gt;
+## 52973 2015     wisconsin north central east north central   &lt;NA&gt;
+## 52974 2015       wyoming          west           mountain   &lt;NA&gt;
+##                      measure                                   unit  value
+## 52969 Gross Domestic Product NAICS GDP: Millions of Current Dollars  30300
+## 52970 Gross Domestic Product NAICS GDP: Millions of Current Dollars 481721
+## 52971 Gross Domestic Product NAICS GDP: Millions of Current Dollars 446417
+## 52972 Gross Domestic Product NAICS GDP: Millions of Current Dollars  73384
+## 52973 Gross Domestic Product NAICS GDP: Millions of Current Dollars 301587
+## 52974 Gross Domestic Product NAICS GDP: Millions of Current Dollars  39415</code></pre>
+<pre class="r"><code>str(MasterTidy)</code></pre>
+<pre><code>## 'data.frame':    52974 obs. of  8 variables:
+##  $ year    : int  2015 2014 2013 2012 2011 2010 2009 2008 2007 2006 ...
+##  $ state   : chr  &quot;alabama&quot; &quot;alabama&quot; &quot;alabama&quot; &quot;alabama&quot; ...
+##  $ region  : chr  &quot;south&quot; &quot;south&quot; &quot;south&quot; &quot;south&quot; ...
+##  $ division: chr  &quot;east south central&quot; &quot;east south central&quot; &quot;east south central&quot; &quot;east south central&quot; ...
+##  $ sector  : chr  &quot;all&quot; &quot;all&quot; &quot;all&quot; &quot;all&quot; ...
+##  $ measure : chr  &quot;Energy Consumption&quot; &quot;Energy Consumption&quot; &quot;Energy Consumption&quot; &quot;Energy Consumption&quot; ...
+##  $ unit    : chr  &quot;Billions of Btus&quot; &quot;Billions of Btus&quot; &quot;Billions of Btus&quot; &quot;Billions of Btus&quot; ...
+##  $ value   : num  1909559 1956390 1919299 1879577 1905096 ...</code></pre>
 <p><br></p>
 <p>The MasterTidy dataset we created above is perfect for most applications in R, but not ideal for working in Excel. Since the plan is to eventually use this data in an excel dashboard, we will create a new wider dataset with columns for each different measure and within each column will be the values that used to be in the column “value”.</p>
+<pre class="r"><code>library(reshape2)</code></pre>
+<pre><code>## 
+## Attaching package: 'reshape2'</code></pre>
+<pre><code>## The following object is masked from 'package:tidyr':
+## 
+##     smiths</code></pre>
+<pre class="r"><code>wide.consumption &lt;- dcast(filter(consumption.data, year &gt;= 1980), 
+                          year + state + region + division + sector 
+                          ~ measure, 
+                          value.var = &quot;value&quot;)
+wide.emissions &lt;- dcast(filter(emissions.data, year &gt;= 1980),
+                        year + state + region + division + sector
+                        ~ measure,
+                        value.var = &quot;value&quot;)
+wide.expenditures &lt;- dcast(filter(expenditures.data, year &gt;= 1980),
+                           year + state + region + division + sector
+                           ~ measure,
+                           value.var = &quot;value&quot;)
+wide.production &lt;- dcast(filter(production.data, year &gt;= 1980),
+                         year + state + region + division + sector
+                         ~ measure,
+                         value.var = &quot;value&quot;)
+wide.population &lt;- dcast(filter(population.data, year &gt;= 1980),
+                         year + state + region + division + sector
+                         ~ measure,
+                         value.var = &quot;value&quot;)
+wide.gdp &lt;- dcast(filter(gdp.data, year &gt;= 1980),
+                  year + state + region + division + sector
+                  ~ measure,
+                  value.var = &quot;value&quot;)
+
+merged &lt;- wide.consumption %&gt;%
+     merge(wide.emissions,
+           by = c(&quot;year&quot;, &quot;state&quot;, &quot;region&quot;, &quot;division&quot;, &quot;sector&quot;),
+           all.x = TRUE) %&gt;%
+     merge(wide.expenditures,
+           by = c(&quot;year&quot;, &quot;state&quot;, &quot;region&quot;, &quot;division&quot;, &quot;sector&quot;),
+           all.x = TRUE) %&gt;%
+     merge(select(wide.production, -sector),
+           by = c(&quot;year&quot;, &quot;state&quot;, &quot;region&quot;, &quot;division&quot;)) %&gt;%
+     merge(select(wide.population, -sector),
+           by = c(&quot;year&quot;, &quot;state&quot;, &quot;region&quot;, &quot;division&quot;)) %&gt;%
+     merge(select(wide.gdp, -sector),
+           by = c(&quot;year&quot;, &quot;state&quot;, &quot;region&quot;, &quot;division&quot;))
+
+head(tbl_df(merged))</code></pre>
+<pre><code>## # A tibble: 6 × 12
+##    year   state region           division                  sector
+##   &lt;int&gt;   &lt;chr&gt;  &lt;chr&gt;              &lt;chr&gt;                   &lt;chr&gt;
+## 1  1980 alabama  south east south central                     all
+## 2  1980 alabama  south east south central        all: electricity
+## 3  1980 alabama  south east south central              commercial
+## 4  1980 alabama  south east south central commercial: electricity
+## 5  1980 alabama  south east south central          electric power
+## 6  1980 alabama  south east south central              industrial
+## # ... with 7 more variables: `Energy Consumption` &lt;dbl&gt;, `CO2
+## #   Emissions` &lt;dbl&gt;, `Energy Expenditures` &lt;dbl&gt;, `Renewable Energy
+## #   Production` &lt;dbl&gt;, `Total Energy Production` &lt;dbl&gt;, Population &lt;dbl&gt;,
+## #   `Gross Domestic Product` &lt;int&gt;</code></pre>
+<pre class="r"><code>str(merged)</code></pre>
+<pre><code>## 'data.frame':    18360 obs. of  12 variables:
+##  $ year                       : int  1980 1980 1980 1980 1980 1980 1980 1980 1980 1980 ...
+##  $ state                      : chr  &quot;alabama&quot; &quot;alabama&quot; &quot;alabama&quot; &quot;alabama&quot; ...
+##  $ region                     : chr  &quot;south&quot; &quot;south&quot; &quot;south&quot; &quot;south&quot; ...
+##  $ division                   : chr  &quot;east south central&quot; &quot;east south central&quot; &quot;east south central&quot; &quot;east south central&quot; ...
+##  $ sector                     : chr  &quot;all&quot; &quot;all: electricity&quot; &quot;commercial&quot; &quot;commercial: electricity&quot; ...
+##  $ Energy Consumption         : num  1645058 171852 127020 24532 824626 ...
+##  $ CO2 Emissions              : num  106.89 NA 2.61 NA 44.06 ...
+##  $ Energy Expenditures        : num  6643 2120 560 397 NA ...
+##  $ Renewable Energy Production: num  238766 238766 238766 238766 238766 ...
+##  $ Total Energy Production    : num  1332560 1332560 1332560 1332560 1332560 ...
+##  $ Population                 : num  3900 3900 3900 3900 3900 3900 3900 3900 3900 3900 ...
+##  $ Gross Domestic Product     : int  36142 36142 36142 36142 36142 36142 36142 36142 36142 36142 ...</code></pre>
+<p><br></p>
+<p>Now we will calculate the performance measures using the “merged” (wide) data set. It is important to keep in mind that when we merged the data sets we lost the column that described what the units were.</p>
+<p><br> <br></p>
+</div>
+<div id="calculating-performance-measures" class="section level3">
+<h3>Calculating Performance Measures</h3>
+<p>Now we will calculate our performance measures, which are:</p>
+<ul>
+<li>Conversion Efficiency: Current dollars GDP per millions of consumed Btu</li>
+<li>Production Efficiency: Consumed Btu per current dollars spent on energy</li>
+<li>Externality Efficiency: Millions of consumed Btu per metric ton of CO2 emitted</li>
+<li>Production to Consumption: Produced Btu per consumed Btu</li>
+<li>Fraction Renewable: Renewably produced Btu per total produced Btu</li>
+</ul>
+<p>When we merged the data sets to create the wide data set we lost the columns that said what the units of each measurement were. We will use the following units for each measurement type:</p>
+<ul>
+<li>Energy Consumption: millions of Btu</li>
+<li>CO2 Emissions: metric tons of CO2</li>
+<li>Energy Expenditures: millions of current dollars</li>
+<li>Total Energy Production: millions of Btu</li>
+<li>Renewable Energy Production: millions of Btu</li>
+<li>Gross Domestic Product: millions of current dollars
+<ul>
+<li>Pre-1997 GDP Values: use SIC system</li>
+<li>1997-2015 GDP Values: sse NAICS</li>
+</ul></li>
+<li>Population: thousands of persons</li>
+</ul>
+<p>First we will convert all measures into the above appropriate units if they are not already. We will also add rows for each region, division, and the country as a whole.</p>
+<pre class="r"><code>WideData &lt;- merged %&gt;%
+     mutate(`Energy Consumption` = `Energy Consumption`*1000,
+            `CO2 Emissions` = `CO2 Emissions`*1000000,
+            `Total Energy Production` = `Total Energy Production`*1000,
+            `Renewable Energy Production` = 
+                 `Renewable Energy Production`*1000)
+
+Country &lt;- WideData %&gt;%
+     group_by(year, sector) %&gt;%
+     summarise(state = &quot;united states&quot;,
+               region = NA,
+               division = NA,
+               `Energy Consumption` = sum(`Energy Consumption`),
+               `CO2 Emissions` = sum(`CO2 Emissions`),
+               `Energy Expenditures` = sum(`Energy Expenditures`),
+               `Renewable Energy Production` = 
+                    sum(`Renewable Energy Production`),
+               `Total Energy Production` = sum(`Total Energy Production`),
+               Population = sum(Population),
+               `Gross Domestic Product` = sum(`Gross Domestic Product`)) %&gt;%
+     ungroup()
+
+Regions &lt;- WideData %&gt;%
+     group_by(year, sector, region) %&gt;%
+     summarise(division = NA,
+               `Energy Consumption` = sum(`Energy Consumption`),
+               `CO2 Emissions` = sum(`CO2 Emissions`),
+               `Energy Expenditures` = sum(`Energy Expenditures`),
+               `Renewable Energy Production` = 
+                    sum(`Renewable Energy Production`),
+               `Total Energy Production` = sum(`Total Energy Production`),
+               Population = sum(Population),
+               `Gross Domestic Product` = sum(`Gross Domestic Product`)) %&gt;%
+     ungroup() %&gt;%
+     mutate(state = region) %&gt;%
+     select(year, state, region, division, sector, 
+            `Energy Consumption`, `CO2 Emissions`, 
+            `Energy Expenditures`, `Renewable Energy Production`,
+            `Total Energy Production`, Population,
+            `Gross Domestic Product`)
+
+Divisions &lt;- WideData %&gt;%
+     group_by(year, sector, region, division) %&gt;%
+     summarise(`Energy Consumption` = sum(`Energy Consumption`),
+               `CO2 Emissions` = sum(`CO2 Emissions`),
+               `Energy Expenditures` = sum(`Energy Expenditures`),
+               `Renewable Energy Production` = 
+                    sum(`Renewable Energy Production`),
+               `Total Energy Production` = sum(`Total Energy Production`),
+               Population = sum(Population),
+               `Gross Domestic Product` = sum(`Gross Domestic Product`)) %&gt;%
+     ungroup() %&gt;%
+     mutate(state = division) %&gt;%
+     select(year, state, region, division, sector, 
+            `Energy Consumption`, `CO2 Emissions`, 
+            `Energy Expenditures`, `Renewable Energy Production`,
+            `Total Energy Production`, Population,
+            `Gross Domestic Product`)
+
+WideData &lt;- rbind(WideData, Divisions, Regions, Country)
+
+head(tbl_df(WideData))</code></pre>
+<pre><code>## # A tibble: 6 × 12
+##    year   state region           division                  sector
+##   &lt;int&gt;   &lt;chr&gt;  &lt;chr&gt;              &lt;chr&gt;                   &lt;chr&gt;
+## 1  1980 alabama  south east south central                     all
+## 2  1980 alabama  south east south central        all: electricity
+## 3  1980 alabama  south east south central              commercial
+## 4  1980 alabama  south east south central commercial: electricity
+## 5  1980 alabama  south east south central          electric power
+## 6  1980 alabama  south east south central              industrial
+## # ... with 7 more variables: `Energy Consumption` &lt;dbl&gt;, `CO2
+## #   Emissions` &lt;dbl&gt;, `Energy Expenditures` &lt;dbl&gt;, `Renewable Energy
+## #   Production` &lt;dbl&gt;, `Total Energy Production` &lt;dbl&gt;, Population &lt;dbl&gt;,
+## #   `Gross Domestic Product` &lt;int&gt;</code></pre>
+<pre class="r"><code>tail(tbl_df(WideData))</code></pre>
+<pre><code>## # A tibble: 6 × 12
+##    year         state region division                   sector
+##   &lt;int&gt;         &lt;chr&gt;  &lt;chr&gt;    &lt;chr&gt;                    &lt;chr&gt;
+## 1  2015 united states   &lt;NA&gt;     &lt;NA&gt;           electric power
+## 2  2015 united states   &lt;NA&gt;     &lt;NA&gt;               industrial
+## 3  2015 united states   &lt;NA&gt;     &lt;NA&gt;  industrial: electricity
+## 4  2015 united states   &lt;NA&gt;     &lt;NA&gt;              residential
+## 5  2015 united states   &lt;NA&gt;     &lt;NA&gt; residential: electricity
+## 6  2015 united states   &lt;NA&gt;     &lt;NA&gt;           transportation
+## # ... with 7 more variables: `Energy Consumption` &lt;dbl&gt;, `CO2
+## #   Emissions` &lt;dbl&gt;, `Energy Expenditures` &lt;dbl&gt;, `Renewable Energy
+## #   Production` &lt;dbl&gt;, `Total Energy Production` &lt;dbl&gt;, Population &lt;dbl&gt;,
+## #   `Gross Domestic Product` &lt;int&gt;</code></pre>
+<p><br></p>
+<p>Now that the variables are in the proper units we will calculate the performance measures:</p>
+<pre class="r"><code># Before doing anything else, let's remove all the white spaces from column
+# names and make all letters lowercase
+
+names(WideData) &lt;- tolower(gsub(&quot; &quot;, &quot;\\.&quot;, names(WideData)))
+
+WideData &lt;- WideData %&gt;%
+     mutate(conversion.efficiency =
+                 gross.domestic.product/energy.consumption,
+            production.efficiency =
+                 energy.consumption/energy.expenditures,
+            externality.efficiency = 
+                 energy.consumption/co2.emissions,
+            prod.to.consumption =
+                 total.energy.production/energy.consumption,
+            fraction.renewable =
+                 renewable.energy.production/total.energy.production,
+            per.capita.consumption =
+                 energy.consumption/population * 1000)</code></pre>
+<p><br></p>
+<p>Now that we have the performance measures for each state we would like to look at Maine’s performance measures compared to other individual states and the country as a whole. We will create a new data frame for this (which will then be used in Excel to create a dashboard).</p>
+<pre class="r"><code># Initialize data frame
+MaineRelative &lt;- data.frame(year = NULL,
+                            compared.area = NULL,
+                            sector = NULL,
+                            conversion.efficiency = NULL,
+                            production.efficiency = NULL,
+                            externality.efficiency = NULL,
+                            prod.to.consumption = NULL,
+                            fraction.renewable = NULL,
+                            per.capita.consumption = NULL)
+
+# Create data set without maine
+notMaine &lt;- WideData %&gt;%
+     filter(state != &quot;maine&quot;)
+
+# Create a data set with only maine
+onlyMaine &lt;- WideData %&gt;%
+     filter(state == &quot;maine&quot;)
+
+# Create function for getting comparative measures for Maine compared to a 
+# specific year, sector, and state (or area). 
+comp.calc &lt;- function(yr, area, sect){
+     require(dplyr)
+     
+     maindata &lt;- onlyMaine %&gt;%
+          filter(year == yr, sector == sect)
+     compdata &lt;- notMaine %&gt;%
+          filter(year == yr, state == area, sector == sect)
+     
+     conv &lt;- maindata$conv/compdata$conv
+     prod &lt;- maindata$produ/compdata$produ
+     extr &lt;- maindata$extern/compdata$extern
+     ptoc &lt;- maindata$prod.t/compdata$prod.t
+     rfrc &lt;- maindata$frac/compdata$frac
+     pcap &lt;- maindata$per/compdata$per
+     
+     dataframe &lt;- data.frame(year = yr,
+                             compared.area = area,
+                             sector = sect,
+                             conversion.efficiency = conv,
+                             production.efficiency = prod,
+                             externality.efficiency = extr,
+                             prod.to.consumption = ptoc,
+                             fraction.renewable = rfrc,
+                             per.capita.consumption = pcap)
+     
+     return(dataframe)
+}
+
+# Perform above function for all years
+allyear.calc &lt;- function(area, sect){
+     dataframe &lt;- data.frame(year = NULL,
+                             compared.area = NULL,
+                             sector = NULL,
+                             conversion.efficiency = NULL,
+                             production.efficiency = NULL,
+                             externality.efficiency = NULL,
+                             prod.to.consumption = NULL,
+                             fraction.renewable = NULL,
+                             per.capita.consumption = NULL)
+     
+     for(year in unique(onlyMaine$year)){
+        dataframe &lt;- rbind(dataframe,
+                           comp.calc(yr = year,
+                                     area = area,
+                                     sect = sect))  
+     }
+     
+     return(dataframe)
+}
+
+# Perform above function for all sectors
+allsect.calc &lt;- function(area){
+     dataframe &lt;- data.frame(year = NULL,
+                             compared.area = NULL,
+                             sector = NULL,
+                             conversion.efficiency = NULL,
+                             production.efficiency = NULL,
+                             externality.efficiency = NULL,
+                             prod.to.consumption = NULL,
+                             fraction.renewable = NULL,
+                             per.capita.consumption = NULL)
+     
+     for(s in unique(onlyMaine$sector)){
+          dataframe &lt;- rbind(dataframe,
+                             allyear.calc(area = area,
+                                          sect = s))
+     }
+     
+     return(dataframe)
+}
+
+# Perform above function for all states, regions, divisions, and country
+all.calc &lt;- function(){
+    dataframe &lt;- data.frame(year = NULL,
+                             compared.area = NULL,
+                             sector = NULL,
+                             conversion.efficiency = NULL,
+                             production.efficiency = NULL,
+                             externality.efficiency = NULL,
+                             prod.to.consumption = NULL,
+                             fraction.renewable = NULL,
+                             per.capita.consumption = NULL)
+     
+     for(a in unique(notMaine$state)){
+          dataframe &lt;- rbind(dataframe,
+                             allsect.calc(area = a))
+     } 
+    
+    return(dataframe)
+}
+
+h &lt;- all.calc()
+
+write.csv(h, &quot;data/Relative Performance of Maine.csv&quot;, row.names = FALSE)</code></pre>
+</div>
 </div>
 
 

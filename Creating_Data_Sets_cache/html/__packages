@@ -3,3 +3,4 @@ httr
 jsonlite
 dplyr
 tidyr
+reshape2
